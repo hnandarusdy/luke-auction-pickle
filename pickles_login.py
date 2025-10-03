@@ -1,12 +1,3 @@
-"""
-Pickles Website Scraper with Login Functionality
-
-This module provides a reusable class for scraping the Pickles website
-with automatic login functionality using Selenium WebDriver.
-
-Author: GitHub Copilot
-Date: October 3, 2025
-"""
 
 import time
 from typing import Optional
@@ -359,6 +350,217 @@ Please try one of these solutions:
         except Exception as e:
             self.logger.error(f"Failed to take screenshot: {str(e)}")
         return False
+    
+    def navigate_to_auction_page(self, auction_url: str = "https://www.pickles.com.au/upcoming-auctions/salvage") -> bool:
+        """
+        Navigate to the auction page.
+        
+        Args:
+            auction_url (str): The auction page URL to navigate to
+            
+        Returns:
+            bool: True if navigation was successful, False otherwise
+        """
+        try:
+            self.logger.info(f"Navigating to auction page: {auction_url}")
+            self.driver.get(auction_url)
+            
+            # Wait for the auction list to load
+            self.wait.until(EC.presence_of_element_located((By.CLASS_NAME, "auctions-list_auctions-list__XP23h")))
+            self.logger.info("Successfully navigated to auction page")
+            return True
+            
+        except TimeoutException:
+            self.logger.error("Timeout waiting for auction page to load")
+            return False
+        except Exception as e:
+            self.logger.error(f"Failed to navigate to auction page: {str(e)}")
+            return False
+    
+    def extract_auction_details(self) -> list:
+        """
+        Extract auction details from the current auction listing page.
+        
+        Returns:
+            list: List of dictionaries containing auction information
+        """
+        auctions = []
+        
+        try:
+            # Find the auction list container
+            auction_container = self.driver.find_element(By.CLASS_NAME, "auctions-list_auctions-list__XP23h")
+            self.logger.info("Found auction container")
+            
+            # Find all auction articles
+            auction_articles = auction_container.find_elements(By.CSS_SELECTOR, "article[data-testid='auction-card']")
+            self.logger.info(f"Found {len(auction_articles)} auction articles")
+            
+            for idx, article in enumerate(auction_articles, 1):
+                try:
+                    auction_info = {}
+                    
+                    # Get auction title
+                    title_element = article.find_element(By.CSS_SELECTOR, ".auction-card_acb-title__Etjpm")
+                    auction_info['title'] = title_element.text.strip() if title_element else "N/A"
+                    
+                    # Get auction location
+                    location_elements = article.find_elements(By.CSS_SELECTOR, ".ac-location-status_value__PLM4O")
+                    auction_info['location'] = location_elements[0].text.strip() if location_elements else "N/A"
+                    
+                    # Get auction status
+                    auction_info['status'] = location_elements[1].text.strip() if len(location_elements) > 1 else "N/A"
+                    
+                    # Find Sale Info link
+                    sale_info_link = None
+                    try:
+                        # Look for the footer and then the Sale Info link
+                        footer = article.find_element(By.CSS_SELECTOR, "footer[data-testid='ac-footer']")
+                        sale_info_links = footer.find_elements(By.XPATH, ".//a[.//span[text()='Sale Info']]")
+                        
+                        if sale_info_links:
+                            sale_info_link = sale_info_links[0].get_attribute('href')
+                            auction_info['sale_info_url'] = sale_info_link
+                        else:
+                            auction_info['sale_info_url'] = None
+                            
+                    except NoSuchElementException:
+                        self.logger.warning(f"No Sale Info link found for auction {idx}")
+                        auction_info['sale_info_url'] = None
+                    
+                    auctions.append(auction_info)
+                    self.logger.info(f"Extracted auction {idx}: {auction_info['title']}")
+                    
+                except Exception as e:
+                    self.logger.error(f"Error extracting details for auction {idx}: {str(e)}")
+                    continue
+            
+            self.logger.info(f"Successfully extracted {len(auctions)} auction details")
+            return auctions
+            
+        except NoSuchElementException:
+            self.logger.error("Could not find auction list container")
+            return []
+        except Exception as e:
+            self.logger.error(f"Error extracting auction details: {str(e)}")
+            return []
+    
+    def navigate_to_sale_info(self, sale_info_url: str) -> bool:
+        """
+        Navigate to a specific Sale Info page.
+        
+        Args:
+            sale_info_url (str): The Sale Info URL to navigate to
+            
+        Returns:
+            bool: True if navigation was successful, False otherwise
+        """
+        try:
+            self.logger.info(f"Navigating to Sale Info page: {sale_info_url}")
+            self.driver.get(sale_info_url)
+            
+            # Wait for the page to load (looking for common elements)
+            time.sleep(3)  # Gentle delay for page load
+            
+            self.logger.info("Successfully navigated to Sale Info page")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to navigate to Sale Info page: {str(e)}")
+            return False
+    
+    def extract_sale_info_details(self) -> dict:
+        """
+        Extract additional details from the Sale Info page.
+        
+        Returns:
+            dict: Dictionary containing sale info details
+        """
+        sale_details = {
+            'auction_registration': None,
+            'sale_title': None,
+            'sale_date': None,
+            'sale_occurs': None
+        }
+        
+        try:
+            # Look for bidLiveButton
+            try:
+                bid_live_button = self.driver.find_element(By.ID, "bidLiveButton")
+                auction_registration_href = bid_live_button.get_attribute('href')
+                sale_details['auction_registration'] = auction_registration_href
+                self.logger.info(f"Found bidLiveButton href: {auction_registration_href}")
+            except NoSuchElementException:
+                self.logger.info("No bidLiveButton found on page")
+                sale_details['auction_registration'] = None
+            
+            # Extract information from sale summary rows with the new structure
+            try:
+                # Look for sale summary rows with the pattern: label in first <p>, value in second <p>
+                sale_summary_rows = self.driver.find_elements(By.CSS_SELECTOR, "div.sale-summary-row")
+                
+                for row in sale_summary_rows:
+                    try:
+                        # Get all <p> elements in this row
+                        p_elements = row.find_elements(By.TAG_NAME, "p")
+                        
+                        if len(p_elements) >= 2:
+                            label = p_elements[0].text.strip().lower().replace(':', '')
+                            value = p_elements[1].text.strip()
+                            
+                            self.logger.info(f"Found sale info - Label: '{label}', Value: '{value}'")
+                            
+                            # Map labels to our fields
+                            if 'date' in label:
+                                sale_details['sale_date'] = value
+                            elif any(keyword in label for keyword in ['location', 'address', 'venue', 'occurs', 'sale occurs']):
+                                sale_details['sale_occurs'] = value
+                            elif any(keyword in label for keyword in ['title', 'sale', 'auction']):
+                                if not sale_details['sale_title']:  # Only set if not already set
+                                    sale_details['sale_title'] = value
+                    
+                    except Exception as e:
+                        self.logger.warning(f"Error processing sale summary row: {str(e)}")
+                        continue
+                
+                # If we still don't have a sale title, try to get it from page title or heading
+                if not sale_details['sale_title']:
+                    try:
+                        # Try to find a main heading
+                        possible_titles = self.driver.find_elements(By.CSS_SELECTOR, "h1, h2, .page-title, .sale-title")
+                        if possible_titles:
+                            sale_details['sale_title'] = possible_titles[0].text.strip()
+                    except Exception:
+                        pass
+                
+                # Fallback: try the original XPath div if no structured data found
+                if not any([sale_details['sale_date'], sale_details['sale_occurs'], sale_details['sale_title']]):
+                    try:
+                        sale_info_div = self.driver.find_element(By.XPATH, '//*[@id="portlet_SaleDetailsPortlet_WAR_PWRWeb"]/div/div/div/div/div/div[2]/div[1]/div')
+                        div_text = sale_info_div.text.strip()
+                        self.logger.info(f"Fallback - Sale info div text: {div_text}")
+                        
+                        lines = [line.strip() for line in div_text.split('\n') if line.strip()]
+                        if lines:
+                            sale_details['sale_title'] = lines[0] if not sale_details['sale_title'] else sale_details['sale_title']
+                            
+                            for line in lines:
+                                if any(keyword in line.lower() for keyword in ['date', 'starts', 'ends', 'oct', 'nov', 'dec', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep']) and not sale_details['sale_date']:
+                                    sale_details['sale_date'] = line
+                                elif any(keyword in line.lower() for keyword in ['location', 'address', 'occurs', 'venue', 'at:']) and not sale_details['sale_occurs']:
+                                    sale_details['sale_occurs'] = line
+                    
+                    except NoSuchElementException:
+                        self.logger.warning("Could not find the fallback sale info div either")
+                
+                self.logger.info(f"Final extracted sale details: {sale_details}")
+                
+            except Exception as e:
+                self.logger.error(f"Error extracting structured sale info: {str(e)}")
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting sale info details: {str(e)}")
+        
+        return sale_details
     
     def close(self) -> None:
         """
