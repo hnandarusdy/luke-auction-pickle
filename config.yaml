@@ -1,0 +1,46 @@
+# Pickles Auction Scraper Configuration
+# This file contains all configuration settings for the scraper
+
+# Login Credentials
+credentials:
+  username: "hnandarusdy2@gmail.com"
+  password: "123qwe!@#QWE"
+
+# Scraper Settings
+scraper:
+  headless: false  # Set to true to run browser in background
+  wait_timeout: 15  # Timeout in seconds for web elements
+  delay_between_requests: 2  # Delay in seconds between page requests
+  delay_between_categories: 5  # Delay in seconds between auction categories
+
+# Auction Categories to Scrape
+auction_categories:
+  - name: "Cars & Motorcycles"
+    url: "https://www.pickles.com.au/upcoming-auctions/cars-motorcycles"
+    enabled: true
+    
+  - name: "Salvage"
+    url: "https://www.pickles.com.au/upcoming-auctions/salvage"
+    enabled: true
+    
+  - name: "Trucks, Machinery & Earthmoving"
+    url: "https://www.pickles.com.au/upcoming-auctions/trucks-machinery-earthmoving"
+    enabled: true
+    
+  - name: "General Goods & IT"
+    url: "https://www.pickles.com.au/upcoming-auctions/general-goods-it"
+    enabled: true
+
+# Output Settings
+output:
+  csv_filename_template: "pickles_auctions_{category}_{timestamp}.csv"
+  combined_csv_filename: "pickles_auctions_all_categories.csv"
+  create_individual_files: true  # Create separate CSV for each category
+  create_combined_file: true     # Create one combined CSV with all categories
+  include_timestamp: true        # Include timestamp in filenames
+
+# Logging Settings
+logging:
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  log_to_file: true
+  log_filename_template: "pickles_scraper_{timestamp}.log"
