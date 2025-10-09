@@ -21,6 +21,55 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from pickles_login import PicklesScraper
 from logger import get_logger
+from db import MySecondDB
+
+from db import MySecondDB
+
+class Step2WatchEventDB:
+    """
+    Database operations for pickles_live_step2_watch_event table
+    """
+    
+    def __init__(self):
+        """Initialize database connection"""
+        self.db = MySecondDB()
+        self.logger = get_logger("step2_watch_event_db", log_to_file=True)
+    
+    def insert_watch_events(self, watch_events_data):
+        """Insert watch event data into database"""
+        try:
+            if not watch_events_data:
+                return 0
+            
+            # Convert to DataFrame and insert
+            df = pd.DataFrame(watch_events_data)
+            
+            # Ensure columns match table structure
+            expected_columns = ['row_order', 'auction_registration', 'auction_watch_url', 
+                              'event_id', 'event_name', 'event_status']
+            
+            # Add missing columns with None values
+            for col in expected_columns:
+                if col not in df.columns:
+                    df[col] = None
+            
+            # Select only the expected columns
+            df = df[expected_columns]
+            
+            # Insert into database (replace existing data since we want fresh data each run)
+            result = self.db.write_to_sql(df, 'pickles_live_step2_watch_event', how='replace')
+            
+            inserted_count = len(watch_events_data)
+            print(f"✅ Inserted {inserted_count} watch events into database")
+            
+            self.logger.info(f"Inserted {inserted_count} watch events into pickles_live_step2_watch_event")
+            
+            return inserted_count
+            
+        except Exception as e:
+            self.logger.error(f"Error inserting watch events: {str(e)}")
+            print(f"❌ Database insert failed: {str(e)}")
+            raise
 
 class EventIDExtractor:
     """
@@ -31,6 +80,7 @@ class EventIDExtractor:
         """Initialize the extractor."""
         self.logger = get_logger("event_id_extractor", log_to_file=True)
         self.scraper = None
+        self.db_handler = Step2WatchEventDB()
         
         # Credentials (same as in scrape_pickle_schedule.py)
         self.USERNAME = "hnandarusdy2@gmail.com"
@@ -364,6 +414,81 @@ class EventIDExtractor:
             except:
                 pass
     
+    def update_step2_csv_with_events(self, events: List[Dict]) -> List[Dict]:
+        """
+        Update pickles_auction_step2.csv with event IDs and prepare database data.
+        The first user event goes to row 1, second to row 2, etc.
+        
+        Args:
+            events (List[Dict]): List of events from user-events API
+            
+        Returns:
+            List[Dict]: Database-ready data with row mapping
+        """
+        try:
+            print("📝 Updating pickles_auction_step2.csv with event IDs...")
+            
+            # Read the existing step2 CSV
+            df = pd.read_csv("pickles_auction_step2.csv")
+            print(f"   📊 Current CSV has {len(df)} rows")
+            
+            # Add event_id column if it doesn't exist
+            if 'event_id' not in df.columns:
+                df['event_id'] = None
+            if 'event_name' not in df.columns:
+                df['event_name'] = None
+            
+            # Prepare database data
+            watch_events_data = []
+            
+            # Map events to rows: first event goes to first row, etc.
+            for i, event in enumerate(events):
+                row_index = i  # 0-based index for DataFrame
+                row_order = i + 1  # 1-based order for display and database
+                
+                event_id = str(event.get('EventID', ''))
+                event_name = event.get('Name', '')
+                event_status = event.get('Status', '')
+                
+                print(f"   📌 Mapping Event {row_order}: EventID {event_id} → Row {row_order}")
+                
+                # Update CSV data if row exists
+                if row_index < len(df):
+                    df.loc[row_index, 'event_id'] = event_id
+                    df.loc[row_index, 'event_name'] = event_name
+                    
+                    # Prepare database record
+                    watch_events_data.append({
+                        'row_order': row_order,
+                        'auction_registration': df.loc[row_index, 'auction_registration'],
+                        'auction_watch_url': df.loc[row_index, 'auction_watch_url'],
+                        'event_id': event_id,
+                        'event_name': event_name,
+                        'event_status': event_status
+                    })
+                else:
+                    print(f"   ⚠️ Event {row_order} has no corresponding row in CSV - creating database record only")
+                    # Still add to database even if no CSV row
+                    watch_events_data.append({
+                        'row_order': row_order,
+                        'auction_registration': None,
+                        'auction_watch_url': None,
+                        'event_id': event_id,
+                        'event_name': event_name,
+                        'event_status': event_status
+                    })
+            
+            # Save updated CSV
+            df.to_csv("pickles_auction_step2.csv", index=False)
+            print(f"✅ Updated pickles_auction_step2.csv with {len(events)} event IDs")
+            
+            return watch_events_data
+            
+        except Exception as e:
+            print(f"❌ Error updating step2 CSV: {str(e)}")
+            self.logger.error(f"Error updating step2 CSV: {str(e)}")
+            return []
+    
     def fetch_and_save_items_json(self, event_id: str) -> bool:
         """
         Fetch items data from API and save as JSON file with timestamp.
@@ -539,6 +664,20 @@ class EventIDExtractor:
                 print("❌ No events found from user events API. Exiting.")
                 return
             
+            # Step 4.5: Update step2 CSV with event IDs and prepare database data
+            print(f"\n4️⃣.5️⃣ Updating pickles_auction_step2.csv with event IDs...")
+            watch_events_data = self.update_step2_csv_with_events(events)
+            
+            # Step 4.6: Insert into database
+            print(f"\n4️⃣.6️⃣ Inserting watch events into database...")
+            try:
+                inserted_count = self.db_handler.insert_watch_events(watch_events_data)
+                print(f"✅ Database operations completed - {inserted_count} records inserted")
+            except Exception as e:
+                print(f"❌ Database insert failed: {str(e)}")
+                self.logger.error(f"Database insert error: {str(e)}")
+                # Continue with JSON processing even if database fails
+            
             # Step 5: For each event ID, fetch items and save JSON
             print(f"\n5️⃣ Fetching items for {len(events)} events...")
             
@@ -574,6 +713,8 @@ class EventIDExtractor:
             print(f"📊 Summary:")
             print(f"   🔗 Registration URLs processed: {len(registration_urls)}")
             print(f"   📋 Events found: {len(events)}")
+            print(f"   📝 pickles_auction_step2.csv updated with event IDs")
+            print(f"   💾 Watch events saved to pickles_live_step2_watch_event table")
             print(f"   ✅ JSON files saved: {successful_saves}")
             print(f"   ❌ Failed saves: {failed_saves}")
             print(f"   📁 JSON files location: json_data/ folder")

@@ -10,8 +10,78 @@ Date: October 6, 2025
 """
 
 import requests
+import time
+import json
 from pickles_login import PicklesScraper
 from logger import get_logger
+
+
+def make_selenium_request(scraper, api_url):
+    """
+    Make a GET request using Selenium by redirecting the browser to the URL.
+    
+    Args:
+        scraper: Authenticated PicklesScraper instance
+        api_url: URL to navigate to
+        
+    Returns:
+        tuple: (success: bool, response_data: dict/str)
+    """
+    try:
+        print(f"🌐 Using Selenium to navigate to: {api_url}")
+        
+        # Navigate to the API URL using Selenium
+        scraper.driver.get(api_url)
+        
+        # Wait for page to load
+        time.sleep(3)
+        
+        # Get the page source (response)
+        page_source = scraper.driver.page_source
+        
+        print(f"📊 Page loaded successfully")
+        print(f"📝 Page title: {scraper.driver.title}")
+        print(f"📍 Current URL: {scraper.driver.current_url}")
+        
+        # Try to extract JSON from the page source
+        # Look for JSON content in <pre> tags (common for API responses)
+        try:
+            from selenium.webdriver.common.by import By
+            pre_elements = scraper.driver.find_elements(By.TAG_NAME, "pre")
+            
+            if pre_elements:
+                # Get text from the first <pre> element
+                json_text = pre_elements[0].text
+                print(f"📋 Found JSON in <pre> tag")
+                
+                # Try to parse as JSON
+                try:
+                    json_data = json.loads(json_text)
+                    return True, json_data
+                except json.JSONDecodeError:
+                    # If not valid JSON, return the text
+                    return True, json_text
+            else:
+                # No <pre> tag found, check if the entire body contains JSON
+                body_text = scraper.driver.find_element(By.TAG_NAME, "body").text
+                
+                # Try to parse body as JSON
+                try:
+                    json_data = json.loads(body_text)
+                    return True, json_data
+                except json.JSONDecodeError:
+                    # Return the page source if it's not JSON
+                    return True, page_source
+                
+        except Exception as e:
+            print(f"⚠️ Error extracting content: {str(e)}")
+            # Return page source as fallback
+            return True, page_source
+            
+    except Exception as e:
+        error_msg = f"Selenium request error: {str(e)}"
+        print(f"❌ {error_msg}")
+        return False, error_msg
 
 
 def make_api_request(scraper, api_url, method="GET", payload=None):
@@ -136,10 +206,13 @@ def main():
     banner = """
 ╔══════════════════════════════════════════════════════════════╗
 ║                    PICKLES API TEST TOOL                    ║
-║                   Login + API Request                       ║
+║               Login + API Request (Hybrid)                  ║
+║                                                              ║
+║  • GET requests: Selenium redirect                          ║
+║  • POST requests: Requests library                          ║
 ║                                                              ║
 ║  Author: GitHub Copilot                                     ║
-║  Date: October 6, 2025                                      ║
+║  Date: October 7, 2025                                      ║
 ╚══════════════════════════════════════════════════════════════╝
     """
     print(banner)
@@ -157,6 +230,12 @@ def main():
             "payload": None
         },
         {
+            "name": "Auction Details",
+            "url": "https://api.pickles-au.velocicast.io/api/events/4220/items?user=true",
+            "method": "GET",
+            "payload": None
+        },
+        {
             "name": "Product Search", 
             "url": "https://www.pickles.com.au/api-website/buyer/ms-web-asset-search/v2/api/product/public/11862/search",
             "method": "POST",
@@ -168,7 +247,8 @@ def main():
     print(f"🎯 Testing {len(API_URLS)} API endpoints:")
     for i, api in enumerate(API_URLS, 1):
         method = api.get('method', 'GET')
-        print(f"   {i}. {api['name']} ({method}): {api['url']}")
+        request_type = "Selenium redirect" if method == "GET" else "Requests library"
+        print(f"   {i}. {api['name']} ({method} - {request_type}): {api['url']}")
     
     try:
         # Initialize scraper
@@ -207,7 +287,13 @@ def main():
                         print(f"📦 Has Payload: Yes")
                     print(f"{'='*70}")
                     
-                    success, response_data = make_api_request(scraper, api_url, api_method, api_payload)
+                    # Choose request method based on HTTP method
+                    if api_method.upper() == "GET":
+                        print(f"🔧 Using Selenium redirect for GET request")
+                        success, response_data = make_selenium_request(scraper, api_url)
+                    else:
+                        print(f"🔧 Using requests library for {api_method} request")
+                        success, response_data = make_api_request(scraper, api_url, api_method, api_payload)
                     
                     if success:
                         print(f"\\n✅ {api_name} - Request Successful!")

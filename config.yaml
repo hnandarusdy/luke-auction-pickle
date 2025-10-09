@@ -16,19 +16,23 @@ scraper:
 # Auction Categories to Scrape
 auction_categories:
   - name: "Cars & Motorcycles"
-    url: "https://www.pickles.com.au/upcoming-auctions/cars-motorcycles"
+    url: "https://www.pickles.com.au/upcoming-auctions/cars-motorcycles/buymethod-pickles-live/qf-all"
+    url_all: "https://www.pickles.com.au/upcoming-auctions/cars-motorcycles"
     enabled: true
     
   - name: "Salvage"
-    url: "https://www.pickles.com.au/upcoming-auctions/salvage"
+    url: "https://www.pickles.com.au/upcoming-auctions/salvage/buymethod-pickles-live"
+    url_all: "https://www.pickles.com.au/upcoming-auctions/salvage"
     enabled: true
     
   - name: "Trucks, Machinery & Earthmoving"
-    url: "https://www.pickles.com.au/upcoming-auctions/trucks-machinery-earthmoving"
+    url: "https://www.pickles.com.au/upcoming-auctions/trucks-machinery-earthmoving/buymethod-pickles-live"
+    url_all: "https://www.pickles.com.au/upcoming-auctions/trucks-machinery-earthmoving"
     enabled: true
     
   - name: "General Goods & IT"
-    url: "https://www.pickles.com.au/upcoming-auctions/general-goods-it"
+    url: "https://www.pickles.com.au/upcoming-auctions/general-goods-it/buymethod-pickles-live"
+    url_all: "https://www.pickles.com.au/upcoming-auctions/general-goods-it"
     enabled: true
 
 # Output Settings

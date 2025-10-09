@@ -15,9 +15,88 @@ import csv
 import time
 import yaml
 import os
+import pandas as pd
 from datetime import datetime
 from pickles_login import PicklesScraper
 from logger import get_logger
+from db import MySecondDB
+
+
+class PicklesLiveScheduleDB:
+    """
+    Database operations for pickles_live_schedule table
+    """
+    
+    def __init__(self):
+        """Initialize database connection"""
+        self.db = MySecondDB()
+        self.logger = get_logger("live_schedule_db", log_to_file=True)
+    
+    def auction_exists(self, sale_info_url):
+        """Check if an auction with this sale_info_url already exists"""
+        try:
+            if not sale_info_url:
+                return False
+                
+            query = "SELECT COUNT(*) as count FROM pickles_live_schedule WHERE sale_info_url = %s"
+            df = self.db.read_sql(query, params=[sale_info_url])
+            count = df['count'].iloc[0] if not df.empty else 0
+            return count > 0
+        except Exception as e:
+            self.logger.warning(f"Error checking auction existence: {str(e)}")
+            return False
+    
+    def insert_auctions(self, auctions_data):
+        """Insert auction data into database"""
+        try:
+            if not auctions_data:
+                return 0
+            
+            # Filter out auctions that already exist
+            new_auctions = []
+            skipped_count = 0
+            
+            for auction in auctions_data:
+                if self.auction_exists(auction.get('sale_info_url')):
+                    skipped_count += 1
+                    self.logger.info(f"Skipping duplicate auction: {auction.get('title', 'Unknown')[:50]}")
+                else:
+                    new_auctions.append(auction)
+            
+            if not new_auctions:
+                print(f"⚠️ All {len(auctions_data)} auctions already exist in database - skipping insert")
+                return 0
+            
+            # Convert to DataFrame and insert
+            df = pd.DataFrame(new_auctions)
+            
+            # Ensure columns match table structure
+            expected_columns = ['category', 'title', 'location', 'status', 'sale_info_url', 
+                              'auction_registration', 'sale_title', 'sale_date', 'sale_occurs']
+            
+            # Add missing columns with None values
+            for col in expected_columns:
+                if col not in df.columns:
+                    df[col] = None
+            
+            # Select only the expected columns
+            df = df[expected_columns]
+            
+            # Insert into database
+            result = self.db.write_to_sql(df, 'pickles_live_schedule', how='append')
+            
+            inserted_count = len(new_auctions)
+            print(f"✅ Inserted {inserted_count} new auctions into database")
+            print(f"⏭️ Skipped {skipped_count} duplicate auctions")
+            
+            self.logger.info(f"Inserted {inserted_count} auctions, skipped {skipped_count} duplicates")
+            
+            return inserted_count
+            
+        except Exception as e:
+            self.logger.error(f"Error inserting auctions: {str(e)}")
+            print(f"❌ Database insert failed: {str(e)}")
+            raise
 
 
 def load_config(config_path="config.yaml"):
@@ -136,11 +215,14 @@ def main():
     logger = get_logger("pickles_scraper", log_to_file=True)
     logger.info("=== Multi-Category Pickles Scraper Started ===")
     
+    # Initialize database handler
+    db_handler = PicklesLiveScheduleDB()
+    
     # Display banner
     banner = """
 ╔══════════════════════════════════════════════════════════════╗
 ║                PICKLES MULTI-CATEGORY SCRAPER               ║
-║            Generates pickles_auctions_detailed.csv          ║
+║        Generates pickles_auctions_detailed.csv & DB         ║
 ╚══════════════════════════════════════════════════════════════╝
     """
     print(banner)
@@ -174,45 +256,39 @@ def main():
                 print("❌ No auctions found!")
                 return 1
             
-            # Generate timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            print(f"\n📄 Exporting results...")
             
-            # Export files
-            print(f"\\n📄 Exporting results...")
+            # Export to CSV (required for step2)
+            if export_to_csv(all_auctions, "pickles_auctions_detailed.csv"):
+                print(f"✅ CSV export successful")
+            else:
+                print(f"❌ CSV export failed")
+                return 1
             
-            # Individual category files (if enabled)
-            if config['output']['create_individual_files']:
-                categories = set(a['category'] for a in all_auctions)
-                for category in categories:
-                    cat_auctions = [a for a in all_auctions if a['category'] == category]
-                    safe_name = category.lower().replace(" ", "_").replace("&", "and")
-                    filename = f"pickles_auctions_{safe_name}_{timestamp}.csv"
-                    export_to_csv(cat_auctions, filename)
-            
-            # Combined file (if enabled)
-            if config['output']['create_combined_file']:
-                combined_name = config['output']['combined_csv_filename']
-                if config['output']['include_timestamp']:
-                    name, ext = os.path.splitext(combined_name)
-                    combined_name = f"{name}_{timestamp}{ext}"
-                export_to_csv(all_auctions, combined_name)
-            
-            # ALWAYS create the file for step2
-            export_to_csv(all_auctions, "pickles_auctions_detailed.csv")
+            # Insert into database
+            print(f"\n💾 Inserting data into database...")
+            try:
+                inserted_count = db_handler.insert_auctions(all_auctions)
+                print(f"✅ Database operations completed")
+            except Exception as e:
+                print(f"❌ Database insert failed: {str(e)}")
+                logger.error(f"Database insert error: {str(e)}")
+                # Don't return error - CSV is still created for step2
             
             # Summary
-            print(f"\\n🎉 COMPLETED!")
-            print(f"📊 Total auctions: {len(all_auctions)}")
+            print(f"\n🎉 COMPLETED!")
+            print(f"📊 Total auctions scraped: {len(all_auctions)}")
             
             # Count auctions with registration URLs
             with_registration = [a for a in all_auctions if a['auction_registration']]
             print(f"🎫 With registration URLs: {len(with_registration)}")
             
-            print(f"\\n🔗 pickles_auctions_detailed.csv is ready for step2!")
+            print(f"\n🔗 pickles_auctions_detailed.csv is ready for step2!")
+            print(f"💾 Live schedule data saved to pickles_live_schedule table")
             
             
     except KeyboardInterrupt:
-        print("\\n👋 Cancelled by user")
+        print("\n👋 Cancelled by user")
     except Exception as e:
         print(f"💥 Error: {str(e)}")
         logger.error(f"Error: {str(e)}")
