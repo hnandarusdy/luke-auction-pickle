@@ -38,36 +38,34 @@ class EventIDExtractor:
     
     def read_step2_csv(self) -> List[str]:
         """
-        Read pickles_auction_step2.csv and extract auction_watch_url list.
+        Read pickles_auction_step2.csv and extract auction_registration list.
         
         Returns:
-            List[str]: List of auction watch URLs
+            List[str]: List of auction registration URLs
         """
         try:
             print("📄 Reading pickles_auction_step2.csv...")
             df = pd.read_csv("pickles_auction_step2.csv")
             
             print(f"   📊 Total records found: {len(df)}")
-            
-            # Filter for non-empty auction_watch_url
+            # Filter for non-empty auction_registration
             valid_urls = df[
-                df['auction_watch_url'].notna() & 
-                (df['auction_watch_url'].str.strip() != '')
+                df['auction_registration'].notna() & 
+                (df['auction_registration'].str.strip() != '')
             ]
             
-            print(f"   🔗 Valid watch URLs: {len(valid_urls)}")
-            
-            # Get the list of auction_watch_url
-            watch_urls = valid_urls['auction_watch_url'].tolist()
-            
-            print(f"   ✅ Watch URLs to process: {len(watch_urls)}")
-            
+            print(f"   🔗 Valid registration URLs: {len(valid_urls)}")
+            # Get the list of auction_registration
+            auction_registration_urls = valid_urls['auction_registration'].tolist()
+
+            print(f"   ✅ Registration URLs to process: {len(auction_registration_urls)}")
+
             # Display the URLs for verification
-            for i, url in enumerate(watch_urls, 1):
+            for i, url in enumerate(auction_registration_urls, 1):
                 print(f"   {i}. {url[:80]}...")
-            
-            return watch_urls
-            
+
+            return auction_registration_urls
+
         except Exception as e:
             print(f"❌ Error reading CSV: {str(e)}")
             self.logger.error(f"Error reading step2 CSV: {str(e)}")
@@ -96,38 +94,191 @@ class EventIDExtractor:
             self.logger.error(f"Login error: {str(e)}")
             return False
     
-    def open_watch_url(self, watch_url: str, index: int) -> bool:
+    def open_registration_and_watch(self, registration_url: str, index: int) -> bool:
         """
-        Open auction watch URL and record the sequence.
+        Open auction registration URL and click 'Just watch' button.
         
         Args:
-            watch_url (str): The watch URL to open
+            registration_url (str): The registration URL to open
             index (int): The sequence number (1st, 2nd, etc.)
             
         Returns:
-            bool: True if successfully opened
+            bool: True if successfully opened and clicked watch
         """
         try:
-            print(f"   🌐 Opening watch URL ({self.get_ordinal(index)})...")
-            print(f"   🔗 URL: {watch_url}")
+            print(f"   🌐 Opening registration page ({self.get_ordinal(index)})...")
+            print(f"   🔗 URL: {registration_url}")
             
-            # Navigate to the watch URL
-            self.scraper.driver.get(watch_url)
+            # Navigate to the registration URL
+            self.scraper.driver.get(registration_url)
             
             # Wait for page to load
+            print(f"   ⏳ Waiting for page to load...")
             time.sleep(3)
             
-            print(f"   ✅ Successfully opened {self.get_ordinal(index)} URL")
-            print(f"   📍 Current URL: {self.scraper.driver.current_url}")
-            print(f"   📄 Page title: {self.scraper.driver.title}")
+            print(f"   🔍 Looking for 'Just watch' button...")
             
+            # Try to find and click the "Just watch" button
+            wait = WebDriverWait(self.scraper.driver, 10)
+            
+            # Look for the "Just watch" button with various selectors
+            just_watch_selectors = [
+                "//a[contains(text(), 'Just watch')]",
+                "//a[contains(@class, 'btn') and contains(text(), 'Just watch')]",
+                "//a[@rel='nofollow' and contains(text(), 'Just watch')]",
+                "//a[contains(@href, 'registrationType=LIVE_VIEW')]"
+            ]
+            
+            button_found = False
+            for selector in just_watch_selectors:
+                try:
+                    just_watch_button = wait.until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                    
+                    print(f"   🎯 Found 'Just watch' button!")
+                    print(f"   🔗 Button href: {just_watch_button.get_attribute('href')}")
+                    
+                    # Click the button
+                    just_watch_button.click()
+                    print(f"   ✅ Clicked 'Just watch' button")
+                    
+                    button_found = True
+                    break
+                    
+                except (TimeoutException, NoSuchElementException):
+                    continue
+            
+            if not button_found:
+                print(f"   ⚠️ 'Just watch' button not found, trying alternative approaches...")
+                
+                # Try to find any registration-related links
+                try:
+                    registration_links = self.scraper.driver.find_elements(
+                        By.XPATH, "//a[contains(@href, 'registrationType=LIVE_VIEW')]" 
+                    )
+                    
+                    if registration_links:
+                        registration_links[0].click()
+                        print(f"   ✅ Clicked registration link as fallback")
+                        button_found = True
+                    else:
+                        print(f"   ❌ No registration links found")
+                        
+                except Exception as e2:
+                    print(f"   ❌ Fallback approach failed: {str(e2)}")
+            
+            if button_found:
+                # Wait for 2-3 seconds after clicking
+                print(f"   ⏳ Waiting 3 seconds after clicking...")
+                time.sleep(3)
+                
+                print(f"   📍 Current URL: {self.scraper.driver.current_url}")
+                print(f"   📄 Page title: {self.scraper.driver.title}")
+                
+                # Check if redirected to Registration Form page
+                if "Registration Form - Pickles Auctions Australia" in self.scraper.driver.title:
+                    print(f"   🔄 Redirected to Registration Form page")
+                    print(f"   🔍 Looking for 'CONFIRM' button...")
+                    
+                    try:
+                        # Look for the CONFIRM button
+                        confirm_wait = WebDriverWait(self.scraper.driver, 10)
+                        confirm_button = confirm_wait.until(
+                            EC.element_to_be_clickable((By.XPATH, "//input[@value='Confirm' or @value='CONFIRM']"))
+                        )
+                        
+                        print(f"   🎯 Found 'CONFIRM' button!")
+                        print(f"   🖱️ Button details: {confirm_button.get_attribute('outerHTML')}")
+                        
+                        # Click the CONFIRM button
+                        confirm_button.click()
+                        print(f"   ✅ Clicked 'CONFIRM' button")
+                        
+                        # Wait a bit after clicking confirm
+                        print(f"   ⏳ Waiting 3 seconds after confirm...")
+                        time.sleep(3)
+                        
+                        print(f"   📍 Final URL: {self.scraper.driver.current_url}")
+                        print(f"   📄 Final title: {self.scraper.driver.title}")
+                        
+                    except (TimeoutException, NoSuchElementException) as e:
+                        print(f"   ⚠️ CONFIRM button not found: {str(e)}")
+                        print(f"   📄 Current page source preview: {self.scraper.driver.page_source[:500]}...")
+                
+                print(f"   ✅ Successfully processed {self.get_ordinal(index)} registration")
+                return True
+            else:
+                print(f"   ❌ Could not find or click 'Just watch' button")
+                return False
+            
+        except Exception as e:
+            print(f"   💥 Error processing registration: {str(e)}")
+            self.logger.error(f"Error processing {registration_url}: {str(e)}")
+            return False
+    
+    def open_watch_urls(self, registration_urls: List[str]) -> bool:
+        """
+        Open auction watch URLs with delays.
+        
+        Args:
+            registration_urls (List[str]): List of registration URLs to extract watch URLs
+            
+        Returns:
+            bool: True if successfully processed watch URLs
+        """
+        try:
+            print("📄 Reading auction_watch_url from CSV...")
+            df = pd.read_csv("pickles_auction_step2.csv")
+            
+            # Filter for non-empty auction_watch_url
+            valid_watch_urls = df[
+                df['auction_watch_url'].notna() & 
+                (df['auction_watch_url'].str.strip() != '')
+            ]
+            
+            watch_urls = valid_watch_urls['auction_watch_url'].tolist()
+            print(f"   🔗 Found {len(watch_urls)} watch URLs to process")
+            
+            if not watch_urls:
+                print("   ⚠️ No watch URLs found, skipping watch URL loop")
+                return True
+            
+            print(f"\n🔗 Processing {len(watch_urls)} auction watch URLs...")
+            
+            for i, watch_url in enumerate(watch_urls, 1):
+                print(f"\n📺 Opening watch URL {i}/{len(watch_urls)}:")
+                print(f"   🌐 URL: {watch_url}")
+                
+                try:
+                    # Navigate to the watch URL
+                    self.scraper.driver.get(watch_url)
+                    
+                    # Wait 3 seconds as requested
+                    print(f"   ⏳ Waiting 3 seconds...")
+                    time.sleep(3)
+                    
+                    print(f"   ✅ Successfully opened watch URL {i}")
+                    print(f"   📍 Current URL: {self.scraper.driver.current_url}")
+                    print(f"   📄 Page title: {self.scraper.driver.title}")
+                    
+                except Exception as e:
+                    print(f"   ❌ Error opening watch URL: {str(e)}")
+                    self.logger.error(f"Error opening watch URL {watch_url}: {str(e)}")
+                
+                # Delay between watch URLs (except for the last one)
+                if i < len(watch_urls):
+                    print("   ⏳ Brief pause before next watch URL...")
+                    time.sleep(1)
+            
+            print(f"\n✅ All {len(watch_urls)} watch URLs have been processed!")
             return True
             
         except Exception as e:
-            print(f"   💥 Error opening URL: {str(e)}")
-            self.logger.error(f"Error opening {watch_url}: {str(e)}")
+            print(f"❌ Error processing watch URLs: {str(e)}")
+            self.logger.error(f"Error processing watch URLs: {str(e)}")
             return False
-    
+
     def get_ordinal(self, number: int) -> str:
         """Convert number to ordinal (1st, 2nd, 3rd, etc.)"""
         if 10 <= number % 100 <= 20:
@@ -136,76 +287,73 @@ class EventIDExtractor:
             suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(number % 10, 'th')
         return f"{number}{suffix}"
     
-    def extract_event_id_from_api(self) -> Optional[str]:
+    def get_user_events_api(self) -> List[Dict]:
         """
-        Wait 5 seconds, open new tab, get user-events API, and extract EventID.
+        Get all user events from the refresh API.
         
         Returns:
-            Optional[str]: Event ID or None
+            List[Dict]: List of event data with EventIDs
         """
         try:
-            print("   ⏰ Waiting 5 seconds...")
-            time.sleep(5)
+            print("🔄 Getting user events from API...")
             
-            print("   🆕 Opening new tab for API request...")
-            
-            # Open new tab
+            # Open new tab for API request
             self.scraper.driver.execute_script("window.open('');")
-            
-            # Switch to new tab
             tabs = self.scraper.driver.window_handles
             self.scraper.driver.switch_to.window(tabs[-1])
             
-            # Navigate to the API URL
+            # Navigate to the user events API
             api_url = "https://api.pickles-au.velocicast.io/api/events/refresh/user-events"
-            print(f"   🔗 Getting API: {api_url}")
+            print(f"🔗 Getting API: {api_url}")
             
             self.scraper.driver.get(api_url)
             time.sleep(3)
             
             # Get the page source (API response)
             page_source = self.scraper.driver.page_source
+            print(f"📊 API Response received (length: {len(page_source)} chars)")
             
-            print(f"   📊 API Response received (length: {len(page_source)} chars)")
-            
-            # Try to parse JSON and extract EventID
+            # Try to parse JSON and extract all events
             try:
-                # Extract JSON from the page source (remove HTML wrapper if present)
-                json_match = re.search(r'\[.*\]', page_source)
+                # Extract JSON from the page source
+                json_match = re.search(r'\[.*\]', page_source, re.DOTALL)
                 if json_match:
                     json_text = json_match.group(0)
                     data = json.loads(json_text)
                     
-                    print("   🎯 Parsing EventIDs from API response...")
+                    print("🎯 Parsing events from API response...")
                     
-                    if isinstance(data, list) and len(data) > 0:
-                        # Get the first EventID
+                    if isinstance(data, list):
+                        events = []
                         for item in data:
                             if isinstance(item, dict) and 'EventID' in item:
-                                event_id = str(item['EventID'])
-                                print(f"   ✅ Found EventID: {event_id}")
-                                return event_id
+                                events.append(item)
                         
-                        print("   ❌ No EventID found in API response items")
-                        return None
+                        print(f"✅ Found {len(events)} events with EventIDs")
+                        for i, event in enumerate(events, 1):
+                            event_id = event.get('EventID', 'Unknown')
+                            event_name = event.get('Name', 'Unknown')
+                            print(f"   {i}. EventID: {event_id} - {event_name}")
+                        
+                        return events
                     else:
-                        print(f"   ❌ Unexpected API response format: {type(data)}")
-                        return None
+                        print(f"❌ Unexpected API response format: {type(data)}")
+                        return []
                         
                 else:
-                    print("   ❌ No JSON array found in API response")
-                    print(f"   📄 Raw response preview: {page_source[:200]}...")
-                    return None
+                    print("❌ No JSON array found in API response")
+                    print(f"📄 Raw response preview: {page_source[:200]}...")
+                    return []
                     
             except json.JSONDecodeError as e:
-                print(f"   ❌ Error parsing JSON: {str(e)}")
-                print(f"   📄 Raw response preview: {page_source[:200]}...")
-                return None
+                print(f"❌ Error parsing JSON: {str(e)}")
+                print(f"📄 Raw response preview: {page_source[:200]}...")
+                return []
                 
         except Exception as e:
-            print(f"   💥 Error extracting EventID: {str(e)}")
-            self.logger.error(f"Error extracting EventID: {str(e)}")
-            return None
+            print(f"💥 Error getting user events: {str(e)}")
+            self.logger.error(f"Error getting user events: {str(e)}")
+            return []
             
         finally:
             # Close the API tab and switch back to the original
@@ -218,7 +366,7 @@ class EventIDExtractor:
     
     def fetch_and_save_items_json(self, event_id: str) -> bool:
         """
-        Fetch items data from API and save as JSON file.
+        Fetch items data from API and save as JSON file with timestamp.
         
         Args:
             event_id (str): The event ID to fetch items for
@@ -227,14 +375,16 @@ class EventIDExtractor:
             bool: True if successfully saved JSON
         """
         try:
-            print(f"   📦 Fetching items data for EventID: {event_id}")
+            print(f"📦 Fetching items data for EventID: {event_id}")
             
             # Create json_data folder if it doesn't exist
             import os
+            from datetime import datetime
+            
             json_folder = "json_data"
             if not os.path.exists(json_folder):
                 os.makedirs(json_folder)
-                print(f"   📁 Created folder: {json_folder}")
+                print(f"📁 Created folder: {json_folder}")
             
             # Open new tab for items API
             self.scraper.driver.execute_script("window.open('');")
@@ -243,14 +393,14 @@ class EventIDExtractor:
             
             # Build items API URL
             items_api_url = f"https://api.pickles-au.velocicast.io/api/events/{event_id}/items?user=true"
-            print(f"   🔗 Getting items API: {items_api_url}")
+            print(f"🔗 Getting items API: {items_api_url}")
             
             self.scraper.driver.get(items_api_url)
             time.sleep(3)
             
             # Get the JSON response
             page_source = self.scraper.driver.page_source
-            print(f"   📊 Items API response received (length: {len(page_source)} chars)")
+            print(f"📊 Items API response received (length: {len(page_source)} chars)")
             
             # Extract JSON from page source
             json_match = re.search(r'\{.*\}|\[.*\]', page_source, re.DOTALL)
@@ -261,27 +411,30 @@ class EventIDExtractor:
                 try:
                     json_data = json.loads(json_text)
                     
-                    # Save to file
-                    json_filename = os.path.join(json_folder, f"{event_id}.json")
+                    # Generate timestamp for filename
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    
+                    # Save to file with timestamp format: <event_id>_<timestamp>.json
+                    json_filename = os.path.join(json_folder, f"{event_id}_{timestamp}.json")
                     with open(json_filename, 'w', encoding='utf-8') as f:
                         json.dump(json_data, f, indent=2, ensure_ascii=False)
                     
-                    print(f"   ✅ Saved items JSON: {json_filename}")
-                    print(f"   📏 JSON data size: {len(json_text)} characters")
+                    print(f"✅ Saved items JSON: {json_filename}")
+                    print(f"📏 JSON data size: {len(json_text)} characters")
                     
                     return True
                     
                 except json.JSONDecodeError as e:
-                    print(f"   ❌ Invalid JSON in items response: {str(e)}")
-                    print(f"   📄 Response preview: {page_source[:200]}...")
+                    print(f"❌ Invalid JSON in items response: {str(e)}")
+                    print(f"📄 Response preview: {page_source[:200]}...")
                     return False
             else:
-                print(f"   ❌ No JSON found in items response")
-                print(f"   📄 Response preview: {page_source[:200]}...")
+                print(f"❌ No JSON found in items response")
+                print(f"📄 Response preview: {page_source[:200]}...")
                 return False
                 
         except Exception as e:
-            print(f"   💥 Error fetching items data: {str(e)}")
+            print(f"💥 Error fetching items data: {str(e)}")
             self.logger.error(f"Error fetching items for EventID {event_id}: {str(e)}")
             return False
             
@@ -335,17 +488,21 @@ class EventIDExtractor:
     
     def run(self):
         """
-        Main execution method.
+        Main execution method following the new flow:
+        1. Login
+        2. Loop through and open all watch URLs with delays
+        3. Only after all loops finish, get user events API
+        4. For each event ID, fetch items and save JSON
         """
-        print("🚀 Starting EventID Extraction from User Events API...")
+        print("🚀 Starting EventID Extraction with New Flow...")
         
         try:
             # Step 1: Read step2 CSV
             print("\n1️⃣ Reading pickles_auction_step2.csv...")
-            watch_urls = self.read_step2_csv()
+            registration_urls = self.read_step2_csv()
             
-            if not watch_urls:
-                print("❌ No watch URLs found. Exiting.")
+            if not registration_urls:
+                print("❌ No registration URLs found. Exiting.")
                 return
             
             # Step 2: Login to Pickles
@@ -353,41 +510,73 @@ class EventIDExtractor:
             if not self.login_to_pickles():
                 return
             
-            # Step 3: Process each watch URL
-            print(f"\n3️⃣ Processing {len(watch_urls)} watch URLs...")
-            results = []
+            # Step 3: Process ALL registration URLs first (with delays)
+            print(f"\n3️⃣ Processing {len(registration_urls)} registration URLs...")
             
-            for i, watch_url in enumerate(watch_urls, 1):
-                print(f"\n📄 Processing {i}/{len(watch_urls)}:")
+            for i, registration_url in enumerate(registration_urls, 1):
+                print(f"\n📄 Processing registration {i}/{len(registration_urls)}:")
                 
-                # Open the watch URL
-                if self.open_watch_url(watch_url, i):
-                    # Extract EventID from API
-                    event_id = self.extract_event_id_from_api()
-                    
-                    # If we got an EventID, fetch and save the items JSON
-                    if event_id:
-                        self.fetch_and_save_items_json(event_id)
-                    else:
-                        print("   ⚠️ No EventID found, skipping items fetch")
-                else:
-                    event_id = None
+                # Open registration page and click 'Just watch'
+                self.open_registration_and_watch(registration_url, i)
                 
-                results.append({
-                    'auction_watch_url': watch_url,
-                    'event_id': event_id
-                })
-                
-                # Small delay between URLs
-                if i < len(watch_urls):
+                # Brief pause between URLs (except for the last one)
+                if i < len(registration_urls):
                     print("   ⏳ Brief pause before next URL...")
-                    time.sleep(2)
+                    time.sleep(1)
             
-            # Step 4: Save results
-            print(f"\n4️⃣ Saving results...")
-            self.save_results_to_csv(results)
+            print(f"\n✅ All {len(registration_urls)} registrations have been processed!")
             
-            print("\n🎉 EventID extraction completed successfully!")
+            # Step 3.5: Process auction watch URLs
+            print(f"\n🔗 Step 3.5: Processing auction watch URLs...")
+            if not self.open_watch_urls(registration_urls):
+                print("⚠️ Failed to process watch URLs, but continuing...")
+            
+            # Step 4: Get user events API (only after all URLs are processed)
+            print(f"\n4️⃣ Getting user events from API...")
+            events = self.get_user_events_api()
+            
+            if not events:
+                print("❌ No events found from user events API. Exiting.")
+                return
+            
+            # Step 5: For each event ID, fetch items and save JSON
+            print(f"\n5️⃣ Fetching items for {len(events)} events...")
+            
+            successful_saves = 0
+            failed_saves = 0
+            
+            for i, event in enumerate(events, 1):
+                event_id = str(event.get('EventID', ''))
+                event_name = event.get('Name', 'Unknown')
+                
+                print(f"\n📦 Processing Event {i}/{len(events)}:")
+                print(f"   🆔 EventID: {event_id}")
+                print(f"   📋 Name: {event_name}")
+                
+                if event_id:
+                    if self.fetch_and_save_items_json(event_id):
+                        successful_saves += 1
+                        print(f"   ✅ Successfully saved items JSON")
+                    else:
+                        failed_saves += 1
+                        print(f"   ❌ Failed to save items JSON")
+                else:
+                    failed_saves += 1
+                    print(f"   ❌ No valid EventID found")
+                
+                # Brief pause between API calls
+                if i < len(events):
+                    print("   ⏳ Brief pause before next event...")
+                    time.sleep(1)
+            
+            # Final summary
+            print(f"\n🎉 Process completed successfully!")
+            print(f"📊 Summary:")
+            print(f"   🔗 Registration URLs processed: {len(registration_urls)}")
+            print(f"   📋 Events found: {len(events)}")
+            print(f"   ✅ JSON files saved: {successful_saves}")
+            print(f"   ❌ Failed saves: {failed_saves}")
+            print(f"   📁 JSON files location: json_data/ folder")
             
         except Exception as e:
             print(f"💥 Unexpected error: {str(e)}")
