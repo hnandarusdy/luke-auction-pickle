@@ -57,7 +57,7 @@ class Step2WatchEventDB:
             df = df[expected_columns]
             
             # Insert into database (replace existing data since we want fresh data each run)
-            result = self.db.write_to_sql(df, 'pickles_live_step2_watch_event', how='replace')
+            result = self.db.write_to_sql(df, 'pickles_live_step2_watch_event', how='append')
             
             inserted_count = len(watch_events_data)
             print(f"✅ Inserted {inserted_count} watch events into database")
