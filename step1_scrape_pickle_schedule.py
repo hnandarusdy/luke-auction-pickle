@@ -72,7 +72,7 @@ class PicklesLiveScheduleDB:
             
             # Ensure columns match table structure
             expected_columns = ['category', 'title', 'location', 'status', 'sale_info_url', 
-                              'auction_registration', 'sale_title', 'sale_date', 'sale_occurs']
+                              'auction_registration', 'sale_title', 'sale_date', 'sale_occurs', 'auction_type']
             
             # Add missing columns with None values
             for col in expected_columns:
@@ -113,17 +113,25 @@ def load_config(config_path="config.yaml"):
 
 
 def scrape_all_categories(scraper, config, logger):
-    """Scrape all enabled auction categories."""
+    """Scrape all enabled auction categories based on auction_run configuration."""
     all_auctions = []
-    enabled_categories = [cat for cat in config['auction_categories'] if cat['enabled']]
+    
+    # Filter categories based on auction_run configuration
+    auction_run_types = config.get('auction_run', ['live_auction', 'online_auction'])
+    enabled_categories = [
+        cat for cat in config['auction_categories'] 
+        if cat['enabled'] and cat.get('type', 'live_auction') in auction_run_types
+    ]
     
     print(f"📊 Processing {len(enabled_categories)} categories...")
+    print(f"🎯 Auction types to run: {', '.join(auction_run_types)}")
     
     for idx, category in enumerate(enabled_categories, 1):
         category_name = category['name']
         category_url = category['url']
+        auction_type = category.get('type', 'live_auction')
         
-        print(f"\\n📂 Category {idx}/{len(enabled_categories)}: {category_name}")
+        print(f"\\n📂 Category {idx}/{len(enabled_categories)}: {category_name} ({auction_type})")
         print(f"🔗 URL: {category_url}")
         
         # Navigate to auction page
@@ -145,6 +153,7 @@ def scrape_all_categories(scraper, config, logger):
         # Process each auction for detailed info
         for i, auction in enumerate(auctions, 1):
             auction['category'] = category_name
+            auction['auction_type'] = auction_type  # Add auction type to each auction
             
             if auction['sale_info_url']:
                 print(f"   📄 Processing {i}/{len(auctions)}: {auction['title'][:50]}...")
@@ -189,7 +198,7 @@ def export_to_csv(auctions, filename):
     """Export auction data to CSV file."""
     try:
         fieldnames = ['category', 'title', 'location', 'status', 'sale_info_url', 
-                     'auction_registration', 'sale_title', 'sale_date', 'sale_occurs']
+                     'auction_registration', 'sale_title', 'sale_date', 'sale_occurs', 'auction_type']
         
         with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -204,6 +213,39 @@ def export_to_csv(auctions, filename):
     except Exception as e:
         print(f"❌ Export failed: {str(e)}")
         return False
+
+def export_auctions_by_type(all_auctions, config):
+    """Export auctions to separate CSV files based on auction type."""
+    try:
+        # Group auctions by type
+        live_auctions = [a for a in all_auctions if a.get('auction_type', 'live_auction') == 'live_auction']
+        online_auctions = [a for a in all_auctions if a.get('auction_type', 'live_auction') == 'online_auction']
+        
+        results = []
+        
+        # Get filenames from config
+        live_csv = config.get('output', {}).get('live_auctions_csv', 'pickles_auctions_detailed.csv')
+        online_csv = config.get('output', {}).get('online_auctions_csv', 'pickles_auctions_detailed_online.csv')
+        
+        # Export live auctions (required for step2)
+        if live_auctions:
+            if export_to_csv(live_auctions, live_csv):
+                results.append(f"✅ Live auctions: {len(live_auctions)} records → {live_csv}")
+            else:
+                results.append(f"❌ Failed to export live auctions")
+        
+        # Export online auctions
+        if online_auctions:
+            if export_to_csv(online_auctions, online_csv):
+                results.append(f"✅ Online auctions: {len(online_auctions)} records → {online_csv}")
+            else:
+                results.append(f"❌ Failed to export online auctions")
+        
+        return results
+        
+    except Exception as e:
+        print(f"❌ Export by type failed: {str(e)}")
+        return [f"❌ Export by type failed: {str(e)}"]
 
 
 def main():
@@ -258,11 +300,15 @@ def main():
             
             print(f"\n📄 Exporting results...")
             
-            # Export to CSV (required for step2)
-            if export_to_csv(all_auctions, "pickles_auctions_detailed.csv"):
-                print(f"✅ CSV export successful")
-            else:
-                print(f"❌ CSV export failed")
+            # Export auctions by type to separate CSV files
+            export_results = export_auctions_by_type(all_auctions, config)
+            for result in export_results:
+                print(f"   {result}")
+            
+            # Check if live auctions CSV was created (required for step2)
+            live_csv = config.get('output', {}).get('live_auctions_csv', 'pickles_auctions_detailed.csv')
+            if not any(live_csv in result and "✅" in result for result in export_results):
+                print(f"❌ Failed to create {live_csv} (required for step2)")
                 return 1
             
             # Insert into database
@@ -279,11 +325,24 @@ def main():
             print(f"\n🎉 COMPLETED!")
             print(f"📊 Total auctions scraped: {len(all_auctions)}")
             
+            # Count auctions by type
+            live_auctions = [a for a in all_auctions if a.get('auction_type', 'live_auction') == 'live_auction']
+            online_auctions = [a for a in all_auctions if a.get('auction_type', 'live_auction') == 'online_auction']
+            print(f"🔴 Live auctions: {len(live_auctions)}")
+            print(f"🟢 Online auctions: {len(online_auctions)}")
+            
             # Count auctions with registration URLs
             with_registration = [a for a in all_auctions if a['auction_registration']]
             print(f"🎫 With registration URLs: {len(with_registration)}")
             
-            print(f"\n🔗 pickles_auctions_detailed.csv is ready for step2!")
+            print(f"\n📁 Generated Files:")
+            live_csv = config.get('output', {}).get('live_auctions_csv', 'pickles_auctions_detailed.csv')
+            online_csv = config.get('output', {}).get('online_auctions_csv', 'pickles_auctions_detailed_online.csv')
+            
+            if live_auctions:
+                print(f"   � {live_csv} (live auctions - for step2)")
+            if online_auctions:
+                print(f"   � {online_csv} (online auctions)")
             print(f"💾 Live schedule data saved to pickles_live_schedule table")
             
             

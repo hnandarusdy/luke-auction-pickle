@@ -78,32 +78,85 @@ class PicklesScraper:
             try:
                 # First try with automatic ChromeDriverManager
                 self.logger.info("Attempting to use ChromeDriverManager...")
-                service = Service(ChromeDriverManager().install())
+                # Force latest version and clear cache to get compatible driver
+                service = Service(ChromeDriverManager(version="latest").install())
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                self.logger.info("ChromeDriverManager setup successful")
                 
             except Exception as chrome_manager_error:
                 self.logger.warning(f"ChromeDriverManager failed: {chrome_manager_error}")
-                self.logger.info("Attempting to use system Chrome driver...")
+                self.logger.info("Attempting alternative ChromeDriverManager setup...")
                 
-                # Fallback: try to use Chrome driver from system PATH
                 try:
-                    self.driver = webdriver.Chrome(options=chrome_options)
-                except Exception as system_driver_error:
-                    self.logger.error(f"System Chrome driver failed: {system_driver_error}")
+                    # Try with cache_valid_range=1 to force fresh download
+                    from webdriver_manager.chrome import ChromeDriverManager
+                    service = Service(ChromeDriverManager(cache_valid_range=1).install())
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                    self.logger.info("Alternative ChromeDriverManager setup successful")
                     
-                    # Final fallback: provide detailed error message
-                    error_msg = f"""
-Chrome WebDriver setup failed with both methods:
+                except Exception as alt_manager_error:
+                    self.logger.warning(f"Alternative ChromeDriverManager failed: {alt_manager_error}")
+                    self.logger.info("Attempting to use system Chrome driver...")
+                    
+                    # Fallback: try to use Chrome driver from system PATH
+                    try:
+                        self.driver = webdriver.Chrome(options=chrome_options)
+                        self.logger.info("System Chrome driver setup successful")
+                    except Exception as system_driver_error:
+                        self.logger.error(f"System Chrome driver failed: {system_driver_error}")
+                        self.logger.info("Attempting to use local chromedriver.exe...")
+                        
+                        # Final fallback: try local chromedriver.exe in same folder
+                        try:
+                            import os
+                            local_driver_path = os.path.join(os.path.dirname(__file__), "chromedriver.exe")
+                            if os.path.exists(local_driver_path):
+                                self.logger.info(f"Found local chromedriver.exe at: {local_driver_path}")
+                                service = Service(local_driver_path)
+                                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                                self.logger.info("Local chromedriver.exe setup successful")
+                            else:
+                                raise FileNotFoundError(f"chromedriver.exe not found at: {local_driver_path}")
+                                
+                        except Exception as local_driver_error:
+                            self.logger.error(f"Local chromedriver.exe failed: {local_driver_error}")
+                            
+                            # Ultimate fallback: provide detailed error message with Chrome version info
+                            try:
+                                import subprocess
+                                import os
+                                chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+                                if os.path.exists(chrome_path):
+                                    result = subprocess.run([chrome_path, "--version"], capture_output=True, text=True, timeout=10)
+                                    chrome_version = result.stdout.strip() if result.returncode == 0 else "Unknown"
+                                else:
+                                    chrome_version = "Chrome not found in standard location"
+                            except:
+                                chrome_version = "Could not determine Chrome version"
+                            
+                            current_dir = os.path.dirname(__file__)
+                            error_msg = f"""
+Chrome WebDriver setup failed with all methods:
 1. ChromeDriverManager: {chrome_manager_error}
-2. System driver: {system_driver_error}
+2. Alternative ChromeDriverManager: {alt_manager_error}
+3. System driver: {system_driver_error}
+4. Local chromedriver.exe: {local_driver_error}
 
-Please try one of these solutions:
-1. Update Chrome browser to the latest version
-2. Manually download ChromeDriver from: https://sites.google.com/chromium.org/driver/
-3. Install ChromeDriver via: pip install --upgrade webdriver-manager
-4. Add ChromeDriver to your system PATH
-                    """
-                    raise WebDriverException(error_msg)
+Current Chrome version: {chrome_version}
+Searched for local driver at: {os.path.join(current_dir, "chromedriver.exe")}
+
+SOLUTIONS:
+1. Download ChromeDriver for Chrome {chrome_version} from:
+   https://googlechromelabs.github.io/chrome-for-testing/
+   
+2. Save chromedriver.exe in this folder:
+   {current_dir}
+   
+3. Or clear cache and retry: Delete folder %USERPROFILE%\\.wdm
+   
+4. Or update webdriver-manager: pip install --upgrade webdriver-manager
+                            """
+                            raise WebDriverException(error_msg)
             
             # Setup WebDriverWait
             self.wait = WebDriverWait(self.driver, self.wait_timeout)
