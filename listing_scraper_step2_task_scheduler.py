@@ -10,8 +10,40 @@ import subprocess
 import socket
 import getpass
 import os
+import yaml
 from datetime import datetime, timedelta
 from db import MySecondDB
+
+def load_config(config_path="config.yaml"):
+    """Load configuration from YAML file"""
+    try:
+        with open(config_path, 'r', encoding='utf-8') as file:
+            return yaml.safe_load(file)
+    except FileNotFoundError:
+        print(f"❌ Configuration file '{config_path}' not found!")
+        print(f"💡 Using default Python path from system")
+        return None
+    except yaml.YAMLError as e:
+        print(f"❌ Error parsing configuration file: {e}")
+        print(f"💡 Using default Python path from system")
+        return None
+
+def get_python_path(config):
+    """Get Python executable path from config or fallback to system default"""
+    try:
+        if config and 'file_dir' in config and 'python' in config['file_dir']:
+            python_path = config['file_dir']['python']
+            print(f"🐍 Using Python from config: {python_path}")
+            return python_path
+        else:
+            import sys
+            python_path = sys.executable
+            print(f"🐍 Using system Python: {python_path}")
+            return python_path
+    except Exception as e:
+        print(f"⚠️ Error getting Python path: {e}")
+        import sys
+        return sys.executable
 
 def parse_end_date(sale_date_str):
     """
@@ -170,6 +202,10 @@ def main():
     print("🚀 Starting Auction Task Scheduler...")
     print("=" * 60)
     
+    # Load configuration
+    config = load_config()
+    python_path = get_python_path(config)
+    
     # Initialize database connection
     db = MySecondDB()
     current_time = datetime.now()
@@ -259,8 +295,8 @@ def main():
             # Create task name
             task_name = f"{sale_id}_online_pickles"
             
-            # Create command
-            command = f'python "{script_path}" "{sale_url}"'
+            # Create command using Python path from config
+            command = f'"{python_path}" "{script_path}" "{sale_url}"'
             
             print(f"   🆔 Sale ID: {sale_id}")
             print(f"   🔗 Sale URL: {sale_url}")
@@ -306,7 +342,7 @@ def main():
             print(f"\n🎯 {tasks_created} Windows scheduled tasks have been created!")
             print(f"💾 Task details saved to database table: pickles_online_auction_scheduled_task_scheduler")
             print(f"⏰ Tasks will run 15 minutes before each auction ends")
-            print(f"🤖 Each task will execute: python listing_scraper_step2_scrape_one_url.py <sale_url>")
+            print(f"🤖 Each task will execute: \"{python_path}\" listing_scraper_step2_scrape_one_url.py <sale_url>")
         
     except Exception as e:
         print(f"❌ Error: {e}")
