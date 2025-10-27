@@ -52,7 +52,7 @@
   "salvageStatus": "BOOLEAN",
   "driveable": "BOOLEAN",
   "engineStarts": "BOOLEAN",
-  "keys": "BOOLEAN",
+  "car_keys": "BOOLEAN",
   "spareKeys": "BOOLEAN",
   "plates": "BOOLEAN",
   "platesNumber": "INT",
