@@ -15,11 +15,13 @@ import csv
 import time
 import yaml
 import os
+import re
 import pandas as pd
 from datetime import datetime
 from pickles_login import PicklesScraper
 from logger import get_logger
 from db import MySecondDB
+from duplicate_cleaner import DuplicateCleaner
 
 
 class PicklesLiveScheduleDB:
@@ -72,7 +74,8 @@ class PicklesLiveScheduleDB:
             
             # Ensure columns match table structure
             expected_columns = ['category', 'title', 'location', 'status', 'sale_info_url', 
-                              'auction_registration', 'sale_title', 'sale_date', 'sale_occurs', 'auction_type']
+                              'auction_registration', 'sale_title', 'sale_date', 'sale_occurs', 'auction_type',
+                              'start_sale_date', 'end_sale_date']
             
             # Add missing columns with None values
             for col in expected_columns:
@@ -97,6 +100,68 @@ class PicklesLiveScheduleDB:
             self.logger.error(f"Error inserting auctions: {str(e)}")
             print(f"❌ Database insert failed: {str(e)}")
             raise
+
+
+def parse_sale_dates(sale_date_str):
+    """
+    Parse start and end dates from sale_date string
+    
+    Patterns:
+    - Pattern 1: "Ends Thursday 23/10/2025 1:00pm ACST" -> Only end date
+    - Pattern 2: "Thursday 23/10/2025 12:00pm - Friday 24/10/2025 12:00pm AEST" -> Start and end dates
+    - Pattern 3: "Monday 13/10/2025 12:00pm AEDT" -> Use same date for both start and end dates
+    
+    Returns:
+        tuple: (start_sale_date, end_sale_date) in 'YYYY-MM-DD HH:MM:SS' format
+               If only one date is found, use it for both start and end dates
+    """
+    if not sale_date_str:
+        return None, None
+    
+    try:
+        # Pattern 1: "Ends Thursday 23/10/2025 1:00pm ACST"
+        pattern1 = r'Ends\s+\w+\s+(\d{1,2}/\d{1,2}/\d{4})\s+(\d{1,2}:\d{2}[ap]m)\s+(\w+)'
+        match1 = re.search(pattern1, sale_date_str)
+        
+        if match1:
+            date_part = match1.group(1)
+            time_part = match1.group(2)
+            # Only end date found
+            dt = datetime.strptime(f"{date_part} {time_part}", "%d/%m/%Y %I:%M%p")
+            return None, dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Pattern 2: "Thursday 23/10/2025 12:00pm - Friday 24/10/2025 12:00pm AEST"
+        pattern2 = r'(\w+\s+\d{1,2}/\d{1,2}/\d{4})\s+(\d{1,2}:\d{2}[ap]m)\s+-\s+(\w+\s+\d{1,2}/\d{1,2}/\d{4})\s+(\d{1,2}:\d{2}[ap]m)\s+(\w+)'
+        match2 = re.search(pattern2, sale_date_str)
+        
+        if match2:
+            start_date_part = match2.group(1).split()[-1]  # Extract date from "Thursday 23/10/2025"
+            start_time_part = match2.group(2)
+            end_date_part = match2.group(3).split()[-1]    # Extract date from "Friday 24/10/2025"
+            end_time_part = match2.group(4)
+            
+            start_dt = datetime.strptime(f"{start_date_part} {start_time_part}", "%d/%m/%Y %I:%M%p")
+            end_dt = datetime.strptime(f"{end_date_part} {end_time_part}", "%d/%m/%Y %I:%M%p")
+            
+            return start_dt.strftime('%Y-%m-%d %H:%M:%S'), end_dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Pattern 3: "Monday 13/10/2025 12:00pm AEDT" (single date - use for both start and end)
+        pattern3 = r'\w+\s+(\d{1,2}/\d{1,2}/\d{4})\s+(\d{1,2}:\d{2}[ap]m)\s+(\w+)'
+        match3 = re.search(pattern3, sale_date_str)
+        
+        if match3:
+            date_part = match3.group(1)
+            time_part = match3.group(2)
+            # Use same datetime for both start and end
+            dt = datetime.strptime(f"{date_part} {time_part}", "%d/%m/%Y %I:%M%p")
+            formatted_dt = dt.strftime('%Y-%m-%d %H:%M:%S')
+            return formatted_dt, formatted_dt
+        
+        return None, None
+        
+    except Exception as e:
+        print(f"Error parsing date '{sale_date_str}': {e}")
+        return None, None
 
 
 def load_config(config_path="config.yaml"):
@@ -162,6 +227,19 @@ def scrape_all_categories(scraper, config, logger):
                     sale_details = scraper.extract_sale_info_details()
                     auction.update(sale_details)
                     
+                    # Parse start and end dates from sale_date
+                    start_sale_date, end_sale_date = parse_sale_dates(auction.get('sale_date'))
+                    auction['start_sale_date'] = start_sale_date
+                    auction['end_sale_date'] = end_sale_date
+                    
+                    # Log error if end_sale_date is empty
+                    if not end_sale_date:
+                        error_msg = f"Empty end_sale_date for auction: {auction['title'][:50]} | sale_date: {auction.get('sale_date', 'N/A')}"
+                        logger.error(error_msg)
+                        print(f"      ❌ Could not parse end_sale_date: {auction.get('sale_date', 'N/A')}")
+                    else:
+                        print(f"      ✅ Parsed dates - Start: {start_sale_date or 'N/A'}, End: {end_sale_date}")
+                    
                     if sale_details['auction_registration']:
                         print(f"      ✅ Registration URL found")
                 else:
@@ -170,7 +248,9 @@ def scrape_all_categories(scraper, config, logger):
                         'auction_registration': None,
                         'sale_title': None,
                         'sale_date': None,
-                        'sale_occurs': None
+                        'sale_occurs': None,
+                        'start_sale_date': None,
+                        'end_sale_date': None
                     })
                 
                 time.sleep(config['scraper']['delay_between_requests'])
@@ -180,7 +260,9 @@ def scrape_all_categories(scraper, config, logger):
                     'auction_registration': None,
                     'sale_title': None,
                     'sale_date': None,
-                    'sale_occurs': None
+                    'sale_occurs': None,
+                    'start_sale_date': None,
+                    'end_sale_date': None
                 })
         
         all_auctions.extend(auctions)
@@ -198,7 +280,8 @@ def export_to_csv(auctions, filename):
     """Export auction data to CSV file."""
     try:
         fieldnames = ['category', 'title', 'location', 'status', 'sale_info_url', 
-                     'auction_registration', 'sale_title', 'sale_date', 'sale_occurs', 'auction_type']
+                     'auction_registration', 'sale_title', 'sale_date', 'sale_occurs', 'auction_type',
+                     'start_sale_date', 'end_sale_date']
         
         with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -345,6 +428,20 @@ def main():
                 print(f"   � {online_csv} (online auctions)")
             print(f"💾 Live schedule data saved to pickles_live_schedule table")
             
+            # Clean duplicates from pickles_live_schedule table
+            print(f"\n🧹 Cleaning duplicate records...")
+            duplicate_cleaner = DuplicateCleaner()
+            final_count = duplicate_cleaner.clean_duplicates(
+                table_name='pickles_live_schedule',
+                partition_by='sale_info_url',
+                order_by='created_at'
+            )
+            
+            if final_count > 0:
+                print(f"✅ Final table contains {final_count} unique records")
+            else:
+                print(f"⚠️ Duplicate cleaning completed with warnings (check logs)")
+            
             
     except KeyboardInterrupt:
         print("\n👋 Cancelled by user")
@@ -362,3 +459,5 @@ if __name__ == "__main__":
         sys.exit(1)
     
     sys.exit(main())
+
+

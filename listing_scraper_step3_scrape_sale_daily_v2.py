@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Online Scraper Step 2: Direct auction listing page POST request scanner
-Reads from CSV file and processes multiple auction listing URLs
+Step 3: Daily Sale Scraper v2
+Scrapes all active sales from pickles_live_schedule where end_sale_date >= current_date
 """
 
 import time
@@ -18,19 +18,20 @@ from pickles_login import PicklesScraper
 from logger import get_logger
 import requests
 from datetime import datetime
+from db import MySecondDB
 
-class OnlineScraperStep2:
+class DailySaleScraperV2:
     """
-    Direct POST request scanner for specific auction listing page
+    Daily scraper for all active auctions using Selenium
     """
     
     def __init__(self):
         """Initialize the scraper."""
-        self.logger = get_logger("online_scraper_step2", log_to_file=True)
+        self.logger = get_logger("daily_sale_scraper_v2", log_to_file=True)
+        self.db = MySecondDB()
         self.driver = None
         self.wait = None
         self.network_logs = []
-        self.csv_file = "pickles_auction_step2_online.csv"
         self.output_dir = "json_data_online"
         self.current_page = 1
         self.limit = 120
@@ -62,51 +63,50 @@ class OnlineScraperStep2:
             return False
     
     def read_auction_urls(self):
-        """Read auction URLs from CSV file"""
+        """Read auction URLs from database."""
         try:
-            print(f"📁 Reading CSV file: {self.csv_file}")
+            print("� Reading auction URLs from database...")
+            query = "select * from pickles_live_schedule where end_sale_date >= current_date"
+            df = self.db.read_data(query)
             
-            if not os.path.exists(self.csv_file):
-                print(f"❌ CSV file not found: {self.csv_file}")
+            if df.empty:
+                print("📄 No active auction URLs found in database")
                 return []
             
-            # Read CSV file
-            df = pd.read_csv(self.csv_file)
-            print(f"📊 Found {len(df)} rows in CSV")
-            
-            if 'listing_url' not in df.columns:
-                print(f"❌ Column 'listing_url' not found in CSV")
-                print(f"Available columns: {list(df.columns)}")
-                return []
+            print(f"📊 Found {len(df)} active auction URLs")
             
             # Extract URLs and create auction names
             auction_data = []
             for index, row in df.iterrows():
-                listing_url = row['listing_url']
+                sale_info_url = row['sale_info_url']
                 
-                # Extract auction name from URL for file naming
-                # Example: https://www.pickles.com.au/used/search/s/national-online-motor-vehicle-auction/11924
-                url_parts = listing_url.split('/')
-                if len(url_parts) >= 6:
-                    auction_name = url_parts[-2]  # Get the auction name part
-                    sale_id = url_parts[-1]       # Get the sale ID
-                    full_name = f"{auction_name}_{sale_id}"
+                # Transform the URL from /auction/saleinfo/ format to /used/search/s/ format
+                if '/auction/saleinfo/' in sale_info_url:
+                    sale_number = sale_info_url.split('/auction/saleinfo/')[1].rstrip('/')
+                    listing_url = f"https://www.pickles.com.au/used/search/s/{sale_number}/"
+                    
+                    # Extract auction name from URL for file naming
+                    # Example: https://www.pickles.com.au/used/search/s/national-online-motor-vehicle-auction/11924
+                    url_parts = listing_url.split('/')
+                    if len(url_parts) >= 6:
+                        auction_name = url_parts[-2]  # Second to last part
+                    else:
+                        auction_name = f"auction_{index}"
+                    
+                    auction_data.append({
+                        'url': listing_url,
+                        'name': auction_name
+                    })
+                    print(f"✅ Added URL: {listing_url}")
                 else:
-                    full_name = f"auction_{index + 1}"
-                
-                auction_data.append({
-                    'index': index + 1,
-                    'listing_url': listing_url,
-                    'auction_name': full_name,
-                    'sale_info_url': row.get('sale_info_url', '')
-                })
+                    print(f"⚠️ Skipping URL (unexpected format): {sale_info_url}")
             
-            print(f"✅ Loaded {len(auction_data)} auction URLs")
+            print(f"📊 Transformed {len(auction_data)} URLs for scraping")
             return auction_data
             
         except Exception as e:
-            print(f"❌ Error reading CSV file: {e}")
-            self.logger.error(f"Error reading CSV file: {e}")
+            self.logger.error(f"Error reading auction URLs from database: {e}")
+            print(f"❌ Error reading auction URLs: {e}")
             return []
     
     def pause_for_user(self, message):
@@ -563,12 +563,11 @@ class OnlineScraperStep2:
                 
                 # Check if we need more pages
                 items_per_page = self.limit
-                expected_items_for_current_page = items_per_page * page
                 
-                if odata_count > expected_items_for_current_page:
+                if total_items_collected < odata_count:
                     print(f"\n🔄 More pages needed for auction {index}!")
                     print(f"   📊 Total available: {odata_count}")
-                    print(f"   📈 Expected items up to page {page}: {expected_items_for_current_page}")
+                    print(f"   📈 Items collected so far: {total_items_collected}")
                     print(f"   📋 Remaining items: {odata_count - total_items_collected}")
                     
                     page += 1
@@ -597,19 +596,19 @@ class OnlineScraperStep2:
                 'error': str(e)
             }
     
-    def run_interactive_scraper(self):
-        """Run the complete interactive scraping process for all auction URLs"""
+    def run_scraper(self):
+        """Run the complete scraping process for all auction URLs"""
         try:
-            print("🚀 Starting Online Scraper Step 2...")
+            print("🚀 Starting Daily Sale Scraper V2...")
             print("📋 This scraper will:")
-            print("   1. Read auction URLs from CSV file")
+            print("   1. Read auction URLs from database")
             print("   2. For each URL, navigate with pagination (?page=N&limit=120)")
             print("   3. Scan for target POST requests (/search endpoints)")
             print("   4. Call POST requests and save responses to json_data_online/")
             print("   5. Process pagination for each auction")
             print("=" * 60)
             
-            # Read auction URLs from CSV
+            # Read auction URLs from database
             auction_list = self.read_auction_urls()
             if not auction_list:
                 print("❌ No auction URLs found. Exiting.")
@@ -670,12 +669,12 @@ class OnlineScraperStep2:
 
 def main():
     """Main function to run the scraper"""
-    print("🔍 Online Scraper Step 2")
-    print("Direct POST request scanner for auction listing page")
+    print("🔍 Daily Sale Scraper V2")
+    print("Database-driven batch scraper for active auctions")
     print("=" * 60)
     
-    scraper = OnlineScraperStep2()
-    scraper.run_interactive_scraper()
+    scraper = DailySaleScraperV2()
+    scraper.run_scraper()
 
 if __name__ == "__main__":
     main()
