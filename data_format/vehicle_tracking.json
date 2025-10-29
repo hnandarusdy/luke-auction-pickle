@@ -1,0 +1,22 @@
+{
+  "item_id": "BIGINT",
+  "item_forSale": "BOOLEAN",
+  "item_itemBidEndTimestamp": "DATETIME",
+  "item_itemBidEndTimezone": "VARCHAR(50)",
+  "item_buyBackEnabled": "BOOLEAN",
+  "item_stockNumber": "VARCHAR(50)",
+  "item_bidResult": "VARCHAR(100)",
+  "item_buyNowAmount": "DECIMAL(12,2)",
+  "bidding_currentActualBid": "DECIMAL(12,2)",
+  "bidding_minimumBidAmount": "DECIMAL(12,2)",
+  "bidding_userItemBidStatus": "JSON",
+  "bidding_buyerCurrentBid": "DECIMAL(12,2)",
+  "bidding_bidHistoryBidsCount": "INT",
+  "sale_id": "BIGINT",
+  "sale_saleStartTimestamp": "DATETIME",
+  "sale_saleStartTimezone": "VARCHAR(50)",
+  "sale_saleEndTimestamp": "DATETIME",
+  "sale_saleEndTimezone": "VARCHAR(50)",
+  "sale_specialExtension": "VARCHAR(100)",
+  "currentServerTime": "DATETIME"
+}
