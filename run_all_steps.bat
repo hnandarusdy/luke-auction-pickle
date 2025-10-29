@@ -50,6 +50,9 @@ echo [4/4] Running step4_json_to_db.py
 python step4_json_to_db.py
 echo.
 
+python listing_scraper_step5_track_vehicles_by_stockno.py
+python listing_scraper_step6_vehicles_to_db.py
+
 REM ----------------------------------------
 :end
 echo =======================================
