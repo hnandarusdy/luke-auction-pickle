@@ -14,7 +14,6 @@ import yaml
 from datetime import datetime, timedelta
 from db import MySecondDB
 import time 
-from listing_scraper_step4_sale_info_to_db import main as sale_info_to_db_main
 
 def load_config(config_path="config.yaml"):
     """Load configuration from YAML file"""
@@ -355,6 +354,3 @@ def main():
 if __name__ == "__main__":
     main()
 
-    time.sleep (10)
-
-    sale_info_to_db_main()

@@ -21,7 +21,8 @@ from pickles_login import PicklesScraper
 from logger import get_logger
 import requests
 from datetime import datetime
-
+from listing_scraper_step4_sale_info_to_db import main as sale_info_to_db_main
+import time
 class OnlineScraperStep2:
     """
     Direct POST request scanner for specific auction listing page
@@ -809,4 +810,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+    time.sleep (10)
+
+    sale_info_to_db_main()
