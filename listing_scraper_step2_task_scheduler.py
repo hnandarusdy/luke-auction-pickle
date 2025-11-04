@@ -137,7 +137,7 @@ def build_sale_url(sale_info_url, title):
         print(f"Error building sale URL: {e}")
         return None
 
-def create_windows_task(task_name, command, scheduled_time):
+def create_windows_task(task_name, command, scheduled_time, task_type="once", expire_time=None):
     """Create a Windows scheduled task"""
     try:
         # Check if the task already exists
@@ -153,23 +153,60 @@ def create_windows_task(task_name, command, scheduled_time):
         schtasks_time = scheduled_time.strftime("%H:%M")
         schtasks_date = scheduled_time.strftime("%d/%m/%Y")
 
-        # Build the schtasks command
+        # Get the script directory for "start in" parameter (same as task_scheduler.py approach)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Create a batch file to handle the directory change and command execution (to avoid 261 char limit)
+        batch_filename = f"{task_name}_task.bat"
+        batch_path = os.path.join(script_dir, batch_filename)
+        
+        # Write batch file content
+        with open(batch_path, 'w') as f:
+            f.write('@echo off\n')
+            f.write(f'cd /d "{script_dir}"\n')
+            f.write(f'{command}\n')
+        
+        # Build the base schtasks command using the batch file
         schtasks_cmd = [
             "schtasks", "/create",
             "/tn", task_name,
-            "/tr", command,
-            "/sc", "once",
+            "/tr", batch_path,
+            "/sc", "once",  # Default, will be changed for recurring
             "/st", schtasks_time,
             "/sd", schtasks_date,
             "/f"  # Force overwrite if exists
         ]
+        
+        # Add schedule type and interval based on task_type
+        if task_type == "daily_recurring":
+            # Replace the /sc once with minute interval
+            schtasks_cmd[schtasks_cmd.index("/sc") + 1] = "minute"
+            schtasks_cmd.extend(["/mo", "240"])  # Every 4 hours (240 minutes)
+            
+            # Add end time for the recurring task to expire on auction datetime
+            if expire_time:
+                expire_time_str = expire_time.strftime("%H:%M")
+                expire_date_str = expire_time.strftime("%d/%m/%Y")
+                schtasks_cmd.extend(["/et", expire_time_str, "/ed", expire_date_str])
+                print(f"   📅 Task will run every 4 hours starting from: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"   ⏰ Task will expire on: {expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            else:
+                print(f"   📅 Task will run every 4 hours starting from: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"   ⚠️ Note: Task will need manual deletion (no expiry set)")
 
         print(f"   🕒 Creating task: {task_name}")
         print(f"   📅 Scheduled for: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"   📁 Working directory: {script_dir}")
+        if task_type == "daily_recurring":
+            print(f"   🔄 Runs every 4 hours until: {expire_time.strftime('%Y-%m-%d %H:%M:%S') if expire_time else 'No expiry'}")
         print(f"   💻 Command: {command}")
+        print(f"   📄 Batch file: {batch_path}")
+        
+        # Debug: Show the full schtasks command
+        print(f"   🔧 DEBUG - schtasks command: {' '.join(schtasks_cmd)}")
 
-        # Execute the command
-        result = subprocess.run(schtasks_cmd, capture_output=True, text=True, shell=True)
+        # Execute the command (don't use shell=True for better argument handling)
+        result = subprocess.run(schtasks_cmd, capture_output=True, text=True)
 
         if result.returncode == 0:
             print(f"   ✅ Task created successfully")
@@ -293,8 +330,11 @@ def main():
                 tasks_failed += 1
                 continue
             
-            # Create task name
-            task_name = f"{sale_id}_online_pickles"
+            # Create task name for 15-minute before task
+            task_name_15min = f"{sale_id}_online_pickles"
+            
+            # Create task name for daily monitoring task
+            task_name_daily = f"{sale_id}_online_pickles_daily"
             
             # Create command using Python path from config
             command = f'"{python_path}" "{script_path}" "{sale_url}"'
@@ -303,19 +343,31 @@ def main():
             print(f"   🔗 Sale URL: {sale_url}")
             print(f"   ⏰ Scheduled: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')} (15 min before end)")
             
-            # Create Windows scheduled task
-            task_created = create_windows_task(task_name, command, scheduled_time)
+            # Calculate daily monitoring start time (2 days before auction end)
+            daily_start_time = end_time - timedelta(days=2)
             
-            if task_created:
+            # Ensure daily start time is not in the past
+            if daily_start_time <= current_time:
+                daily_start_time = current_time + timedelta(minutes=5)  # Start 5 minutes from now
+            
+            print(f"   📅 Daily monitoring starts: {daily_start_time.strftime('%Y-%m-%d %H:%M:%S')} (2 days before)")
+            print(f"   🔄 Daily monitoring expires: {end_time.strftime('%Y-%m-%d %H:%M:%S')} (auction end)")
+            
+            tasks_created_for_auction = 0
+            
+            # Create the 15-minute before task (original functionality)
+            task_created_15min = create_windows_task(task_name_15min, command, scheduled_time, "once")
+            
+            if task_created_15min:
                 # Prepare task data for database
-                task_data = {
+                task_data_15min = {
                     'sale_id': sale_id,
                     'sale_title': row.get('title', ''),
                     'sale_url': sale_url,
                     'sale_date': row.get('sale_date', ''),
                     'sale_end_date': end_time.strftime('%Y-%m-%d %H:%M:%S'),
                     'scheduled_run_time': scheduled_time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'task_name': task_name,
+                    'task_name': task_name_15min,
                     'task_command': command,
                     'task_status': 'CREATED',
                     'pc_name': pc_name,
@@ -323,11 +375,37 @@ def main():
                 }
                 
                 # Save to database
-                if save_task_to_database(db, task_data):
-                    tasks_created += 1
-                    print(f"   🎉 Task successfully created and saved!")
-                else:
-                    tasks_failed += 1
+                if save_task_to_database(db, task_data_15min):
+                    tasks_created_for_auction += 1
+                    print(f"   ✅ 15-minute task created and saved!")
+            
+            # Create the daily monitoring task (new functionality)
+            task_created_daily = create_windows_task(task_name_daily, command, daily_start_time, "daily_recurring", end_time)
+            
+            if task_created_daily:
+                # Prepare task data for database
+                task_data_daily = {
+                    'sale_id': sale_id,
+                    'sale_title': row.get('title', ''),
+                    'sale_url': sale_url,
+                    'sale_date': row.get('sale_date', ''),
+                    'sale_end_date': end_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'scheduled_run_time': daily_start_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'task_name': task_name_daily,
+                    'task_command': command,
+                    'task_status': 'CREATED',
+                    'pc_name': pc_name,
+                    'created_by': created_by
+                }
+                
+                # Save to database
+                if save_task_to_database(db, task_data_daily):
+                    tasks_created_for_auction += 1
+                    print(f"   ✅ Daily monitoring task created and saved!")
+            
+            if tasks_created_for_auction > 0:
+                tasks_created += tasks_created_for_auction
+                print(f"   🎉 {tasks_created_for_auction} task(s) successfully created for this auction!")
             else:
                 tasks_failed += 1
         
@@ -342,8 +420,12 @@ def main():
         if tasks_created > 0:
             print(f"\n🎯 {tasks_created} Windows scheduled tasks have been created!")
             print(f"💾 Task details saved to database table: pickles_online_auction_scheduled_task_scheduler")
-            print(f"⏰ Tasks will run 15 minutes before each auction ends")
+            print(f"⏰ 15-minute tasks will run 15 minutes before each auction ends")
+            print(f"🔄 Daily monitoring tasks will run every 2 hours starting 1 day before auction")
             print(f"🤖 Each task will execute: \"{python_path}\" listing_scraper_step2_scrape_one_url.py <sale_url>")
+            print(f"\n📋 Task Types Created:")
+            print(f"   • {sale_id}_online_pickles (15 minutes before auction end)")
+            print(f"   • {sale_id}_online_pickles_daily (every 2 hours, expires at auction end)")
         
     except Exception as e:
         print(f"❌ Error: {e}")
