@@ -153,18 +153,40 @@ def create_windows_task(task_name, command, scheduled_time, task_type="once", ex
         schtasks_time = scheduled_time.strftime("%H:%M")
         schtasks_date = scheduled_time.strftime("%d/%m/%Y")
 
-        # Get the script directory for "start in" parameter (same as task_scheduler.py approach)
+        # Get the script directory dynamically (works on any PC)
         script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Get the target script path dynamically
+        target_script_path = os.path.join(script_dir, "listing_scraper_step2_scrape_one_url.py")
         
         # Create a batch file to handle the directory change and command execution (to avoid 261 char limit)
         batch_filename = f"{task_name}_task.bat"
         batch_path = os.path.join(script_dir, batch_filename)
         
-        # Write batch file content
-        with open(batch_path, 'w') as f:
-            f.write('@echo off\n')
-            f.write(f'cd /d "{script_dir}"\n')
-            f.write(f'{command}\n')
+        # Extract Python path and script arguments from the command
+        # The command format is: "python_path" "script_path" "url"
+        # We need to rebuild it with dynamic paths
+        import shlex
+        command_parts = shlex.split(command)
+        if len(command_parts) >= 3:
+            # Get the URL (last argument)
+            url_arg = command_parts[-1]
+            
+            # Get python path from config (already loaded in calling function)
+            config = load_config()
+            python_path = get_python_path(config)
+            
+            # Write batch file content with dynamic paths
+            with open(batch_path, 'w') as f:
+                f.write('@echo off\n')
+                f.write(f'cd /d "{script_dir}"\n')
+                f.write(f'"{python_path}" "{target_script_path}" "{url_arg}"\n')
+        else:
+            # Fallback: use original command
+            with open(batch_path, 'w') as f:
+                f.write('@echo off\n')
+                f.write(f'cd /d "{script_dir}"\n')
+                f.write(f'{command}\n')
         
         # Build the base schtasks command using the batch file
         schtasks_cmd = [
@@ -197,9 +219,10 @@ def create_windows_task(task_name, command, scheduled_time, task_type="once", ex
         print(f"   🕒 Creating task: {task_name}")
         print(f"   📅 Scheduled for: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"   📁 Working directory: {script_dir}")
+        print(f"   📄 Target script: {target_script_path}")
         if task_type == "daily_recurring":
             print(f"   🔄 Runs every 4 hours until: {expire_time.strftime('%Y-%m-%d %H:%M:%S') if expire_time else 'No expiry'}")
-        print(f"   💻 Command: {command}")
+        print(f"   💻 Original command: {command}")
         print(f"   📄 Batch file: {batch_path}")
         
         # Debug: Show the full schtasks command
