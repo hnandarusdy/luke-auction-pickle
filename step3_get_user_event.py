@@ -19,6 +19,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from whatsapp_notifier import with_error_notification
 from pickles_login import PicklesScraper
 from logger import get_logger
 from db import MySecondDB
@@ -730,6 +731,7 @@ class EventIDExtractor:
                 self.scraper.close()
                 print("✅ Cleanup complete!")
 
+@with_error_notification()
 def main():
     """Main function."""
     extractor = EventIDExtractor()

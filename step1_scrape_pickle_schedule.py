@@ -22,6 +22,7 @@ from pickles_login import PicklesScraper
 from logger import get_logger
 from db import MySecondDB
 from duplicate_cleaner import DuplicateCleaner
+from whatsapp_notifier import with_error_notification
 
 
 class PicklesLiveScheduleDB:
@@ -331,6 +332,7 @@ def export_auctions_by_type(all_auctions, config):
         return [f"❌ Export by type failed: {str(e)}"]
 
 
+@with_error_notification()
 def main():
     """Main function."""
     # Load configuration

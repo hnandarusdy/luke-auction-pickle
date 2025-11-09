@@ -23,6 +23,7 @@ import requests
 from datetime import datetime
 from listing_scraper_step4_sale_info_to_db import main as sale_info_to_db_main
 import time
+from whatsapp_notifier import with_error_notification
 class OnlineScraperStep2:
     """
     Direct POST request scanner for specific auction listing page
@@ -758,6 +759,7 @@ class OnlineScraperStep2:
             self.custom_logger.info("AUCTION SCRAPER EXECUTION FINISHED")
             self.custom_logger.info("="*60)
 
+@with_error_notification()
 def main():
     """Main function to run the scraper with command-line URL parameter"""
     try:

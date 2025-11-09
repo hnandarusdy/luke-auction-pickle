@@ -32,6 +32,7 @@ except ImportError:
     print("⚠️ webdriver-manager not available. Will try system ChromeDriver.")
 from db import MySecondDB
 from logger import get_logger
+from whatsapp_notifier import with_error_notification
 
 
 class VehicleTracker:
@@ -746,6 +747,7 @@ SOLUTIONS for Chrome 141.0.7390+:
                 self.db.close()
 
 
+@with_error_notification()
 def main():
     """Main function"""
     banner = """

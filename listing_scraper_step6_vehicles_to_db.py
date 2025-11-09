@@ -14,6 +14,7 @@ import logging
 
 # Import database connection
 from db import MySecondDB
+from whatsapp_notifier import with_error_notification
 
 class VehicleTrackingProcessor:
     """Process vehicle tracking JSON files and insert into database"""
@@ -329,6 +330,7 @@ class VehicleTrackingProcessor:
         
         self.logger.info("Vehicle tracking data processing completed")
 
+@with_error_notification()
 def main():
     """Main function"""
     try:

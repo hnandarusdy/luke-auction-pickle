@@ -19,6 +19,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from pickles_login import PicklesScraper
+from whatsapp_notifier import with_error_notification
 from logger import get_logger
 
 class AuctionWatchScraper:
@@ -306,6 +307,7 @@ class AuctionWatchScraper:
             print("✅ No cleanup needed - no browser was used!")
             print("🚀 Pattern-based conversion completed!")
 
+@with_error_notification()
 def main():
     """Main function."""
     scraper = AuctionWatchScraper()

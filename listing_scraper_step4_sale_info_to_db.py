@@ -19,6 +19,7 @@ from pathlib import Path
 from db import MySecondDB
 from logger import get_logger
 from duplicate_cleaner import DuplicateCleaner
+from whatsapp_notifier import with_error_notification
 
 
 class SaleInfoLoader:
@@ -599,6 +600,7 @@ class SaleInfoLoader:
             return False
 
 
+@with_error_notification()
 def main():
     """Main function"""
     # Display banner

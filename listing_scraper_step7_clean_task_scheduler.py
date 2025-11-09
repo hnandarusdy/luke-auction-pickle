@@ -11,6 +11,7 @@ import json
 import xml.etree.ElementTree as ET
 import os
 import logging
+from whatsapp_notifier import with_error_notification
 
 class TaskSchedulerCleaner:
     """Clean up old Windows scheduled tasks"""
@@ -21,9 +22,94 @@ class TaskSchedulerCleaner:
         self.tasks_deleted = 0
         self.tasks_failed = 0
         self.deleted_tasks_log = []
+        self.bat_files_deleted = 0
+        self.bat_files_failed = 0
         
         # Setup logging
         self.setup_logging()
+        
+        # Get script directory for .bat file cleanup
+        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+    def extract_sale_id_from_task_name(self, task_name):
+        """
+        Extract sale ID from task name
+        Examples: 
+        - '12073_online_pickles' -> '12073'
+        - '12073_online_pickles_daily' -> '12073'
+        """
+        try:
+            # Remove leading backslash if present
+            if task_name.startswith('\\'):
+                task_name = task_name[1:]
+            
+            # Pattern to match sale_id at the beginning followed by _online_pickles
+            pattern = r'^(\d+)_online_pickles'
+            match = re.match(pattern, task_name)
+            
+            if match:
+                sale_id = match.group(1)
+                self.logger.info(f"Extracted sale ID '{sale_id}' from task name '{task_name}'")
+                return sale_id
+            else:
+                self.logger.warning(f"Could not extract sale ID from task name '{task_name}'")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Error extracting sale ID from task name '{task_name}': {e}")
+            return None
+    
+    def find_bat_files_for_sale_id(self, sale_id):
+        """
+        Find all .bat files in the script directory that start with the given sale_id
+        Returns list of .bat file paths
+        """
+        try:
+            bat_files = []
+            
+            # Look for files starting with sale_id and ending with .bat
+            pattern = f"{sale_id}_*.bat"
+            
+            for filename in os.listdir(self.script_dir):
+                if filename.startswith(f"{sale_id}_") and filename.endswith(".bat"):
+                    bat_file_path = os.path.join(self.script_dir, filename)
+                    bat_files.append(bat_file_path)
+                    self.logger.info(f"Found .bat file for sale ID {sale_id}: {filename}")
+            
+            return bat_files
+            
+        except Exception as e:
+            self.logger.error(f"Error finding .bat files for sale ID {sale_id}: {e}")
+            return []
+    
+    def delete_bat_files(self, bat_files):
+        """
+        Delete the specified .bat files
+        Returns tuple (success_count, failed_count)
+        """
+        success_count = 0
+        failed_count = 0
+        
+        for bat_file_path in bat_files:
+            try:
+                filename = os.path.basename(bat_file_path)
+                print(f"   🗑️ Deleting .bat file: {filename}")
+                
+                if os.path.exists(bat_file_path):
+                    os.remove(bat_file_path)
+                    print(f"   ✅ .bat file deleted successfully: {filename}")
+                    self.logger.info(f"Deleted .bat file: {bat_file_path}")
+                    success_count += 1
+                else:
+                    print(f"   ⚠️ .bat file not found: {filename}")
+                    self.logger.warning(f".bat file not found: {bat_file_path}")
+                    
+            except Exception as e:
+                print(f"   ❌ Failed to delete .bat file {filename}: {e}")
+                self.logger.error(f"Failed to delete .bat file {bat_file_path}: {e}")
+                failed_count += 1
+                
+        return success_count, failed_count
         
     def setup_logging(self):
         """Setup logging configuration"""
@@ -326,32 +412,61 @@ class TaskSchedulerCleaner:
             return True  # Assume past if we can't determine
     
     def delete_task(self, task_name, task_info, schedule_time=None):
-        """Delete a Windows scheduled task and log the deletion"""
+        """Delete a Windows scheduled task and associated .bat files"""
         try:
             # Clean task name
+            clean_task_name = task_name
             if task_name.startswith('\\'):
-                task_name = task_name[1:]
+                clean_task_name = task_name[1:]
             
-            print(f"   🗑️ Deleting task: {task_name}")
+            print(f"   🗑️ Deleting task: {clean_task_name}")
             
-            cmd = ["schtasks", "/delete", "/tn", task_name, "/f"]
+            # First delete the scheduled task
+            cmd = ["schtasks", "/delete", "/tn", clean_task_name, "/f"]
             result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
             
             if result.returncode == 0:
                 print(f"   ✅ Task deleted successfully")
                 
+                # Extract sale ID from task name and clean up .bat files
+                sale_id = self.extract_sale_id_from_task_name(clean_task_name)
+                if sale_id:
+                    print(f"   🔍 Looking for .bat files with sale ID: {sale_id}")
+                    
+                    # Find .bat files for this sale ID
+                    bat_files = self.find_bat_files_for_sale_id(sale_id)
+                    
+                    if bat_files:
+                        print(f"   📁 Found {len(bat_files)} .bat file(s) to delete")
+                        
+                        # Delete the .bat files
+                        success_count, failed_count = self.delete_bat_files(bat_files)
+                        
+                        # Update statistics
+                        self.bat_files_deleted += success_count
+                        self.bat_files_failed += failed_count
+                        
+                        if success_count > 0:
+                            print(f"   ✅ Successfully deleted {success_count} .bat file(s)")
+                        if failed_count > 0:
+                            print(f"   ❌ Failed to delete {failed_count} .bat file(s)")
+                    else:
+                        print(f"   ℹ️ No .bat files found for sale ID: {sale_id}")
+                else:
+                    print(f"   ⚠️ Could not extract sale ID from task name, skipping .bat cleanup")
+                
                 # Log the deleted task
-                self.log_deleted_task(task_name, task_info, schedule_time, "Past date - automatic cleanup")
+                self.log_deleted_task(clean_task_name, task_info, schedule_time, "Past date - automatic cleanup")
                 
                 return True
             else:
                 print(f"   ❌ Failed to delete task: {result.stderr}")
-                self.logger.error(f"Failed to delete task {task_name}: {result.stderr}")
+                self.logger.error(f"Failed to delete task {clean_task_name}: {result.stderr}")
                 return False
                 
         except Exception as e:
             print(f"   ❌ Error deleting task: {e}")
-            self.logger.error(f"Error deleting task {task_name}: {e}")
+            self.logger.error(f"Error deleting task {clean_task_name}: {e}")
             return False
     
     def clean_past_tasks(self):
@@ -414,6 +529,8 @@ class TaskSchedulerCleaner:
         print(f"✅ Tasks deleted (past): {self.tasks_deleted}")
         print(f"❌ Tasks failed to delete: {self.tasks_failed}")
         print(f"⏭️ Tasks kept (future): {self.tasks_found - self.tasks_deleted - self.tasks_failed}")
+        print(f"🗑️ .bat files deleted: {self.bat_files_deleted}")
+        print(f"⚠️ .bat files failed to delete: {self.bat_files_failed}")
         
         if self.tasks_deleted > 0:
             print(f"\n🎉 Successfully cleaned up {self.tasks_deleted} old task(s)!")
@@ -423,13 +540,14 @@ class TaskSchedulerCleaner:
         
         # Close logging
         self.logger.info("=== Task Scheduler Cleanup Completed ===")
-        self.logger.info(f"Summary: Found={self.tasks_found}, Deleted={self.tasks_deleted}, Failed={self.tasks_failed}")
+        self.logger.info(f"Summary: Found={self.tasks_found}, Deleted={self.tasks_deleted}, Failed={self.tasks_failed}, BatDeleted={self.bat_files_deleted}, BatFailed={self.bat_files_failed}")
         
         # Close all logging handlers
         for handler in self.logger.handlers[:]:
             handler.close()
             self.logger.removeHandler(handler)
 
+@with_error_notification()
 def main():
     """Main function"""
     try:

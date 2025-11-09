@@ -13,6 +13,7 @@ from datetime import datetime
 from pickles_db_schema import PicklesDBSchema
 from db import MySecondDB
 from logger import get_logger
+from whatsapp_notifier import with_error_notification
 
 class PicklesJSONLoader:
     """
@@ -437,6 +438,7 @@ class PicklesJSONLoader:
             print(f"❌ Error getting database stats: {str(e)}")
             self.logger.error(f"Database stats error: {str(e)}")
 
+@with_error_notification()
 def main():
     """Main function - automatically process all JSON files"""
     print("🚀 Pickles JSON to Database Loader - Step 4")
