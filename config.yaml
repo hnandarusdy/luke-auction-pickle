@@ -13,27 +13,55 @@ scraper:
   delay_between_requests: 2  # Delay in seconds between page requests
   delay_between_categories: 5  # Delay in seconds between auction categories
 
+# Auction Run Configuration
+auction_run: ['live_auction', 'online_auction']  # Which auction types to run: live_auction, online_auction, or both
+# auction_run: ['online_auction']  # Which auction types to run: live_auction, online_auction, or both
+
 # Auction Categories to Scrape
 auction_categories:
   - name: "Cars & Motorcycles"
     url: "https://www.pickles.com.au/upcoming-auctions/cars-motorcycles/buymethod-pickles-live/qf-all"
     url_all: "https://www.pickles.com.au/upcoming-auctions/cars-motorcycles"
     enabled: true
+    type: "live_auction"
     
   - name: "Salvage"
     url: "https://www.pickles.com.au/upcoming-auctions/salvage/buymethod-pickles-live"
     url_all: "https://www.pickles.com.au/upcoming-auctions/salvage"
     enabled: true
+    type: "live_auction"
     
   - name: "Trucks, Machinery & Earthmoving"
     url: "https://www.pickles.com.au/upcoming-auctions/trucks-machinery-earthmoving/buymethod-pickles-live"
     url_all: "https://www.pickles.com.au/upcoming-auctions/trucks-machinery-earthmoving"
     enabled: true
+    type: "live_auction"
     
   - name: "General Goods & IT"
     url: "https://www.pickles.com.au/upcoming-auctions/general-goods-it/buymethod-pickles-live"
     url_all: "https://www.pickles.com.au/upcoming-auctions/general-goods-it"
     enabled: true
+    type: "live_auction"
+
+  - name: "Cars & Motorcycles"
+    url: "https://www.pickles.com.au/upcoming-auctions/cars-motorcycles/buymethod-pickles-online"
+    enabled: true
+    type: "online_auction"
+
+  - name: "Salvage"
+    url: "https://www.pickles.com.au/upcoming-auctions/salvage/buymethod-pickles-online"
+    enabled: true
+    type: "online_auction"
+
+  - name: "Trucks, Machinery & Earthmoving"
+    url: "https://www.pickles.com.au/upcoming-auctions/trucks-machinery-earthmoving/buymethod-pickles-online"
+    enabled: true
+    type: "online_auction"
+
+  - name: "General Goods & IT"
+    url: "https://www.pickles.com.au/upcoming-auctions/general-goods-it/buymethod-pickles-online"
+    enabled: true
+    type: "online_auction"
 
 # Output Settings
 output:
@@ -42,9 +70,17 @@ output:
   create_individual_files: true  # Create separate CSV for each category
   create_combined_file: true     # Create one combined CSV with all categories
   include_timestamp: true        # Include timestamp in filenames
+  
+  # CSV filenames for auction types
+  live_auctions_csv: "pickles_auctions_detailed.csv"           # Live auctions (required for step2)
+  online_auctions_csv: "pickles_auctions_detailed_online.csv"  # Online auctions
 
 # Logging Settings
 logging:
-  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICALP
   log_to_file: true
   log_filename_template: "pickles_scraper_{timestamp}.log"
+
+file_dir: 
+  python: C:\Users\Radfo\AppData\Local\Programs\Python\Python310\python.exe
+  # python: C:\Users\hnand\anaconda3\python.exe
