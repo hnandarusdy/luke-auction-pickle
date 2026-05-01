@@ -1,0 +1,144 @@
+CREATE TABLE pickles_sale_info (
+    -- Primary Key
+    auto_increment_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id VARCHAR(50),
+
+    -- Asset Information
+    assetId VARCHAR(100),
+    assetExternalId BIGINT,
+    assetType VARCHAR(50),
+    stockNumber VARCHAR(50),
+    title VARCHAR(255),
+    shortDescription TEXT,
+    description LONGTEXT,
+
+    -- Vehicle Specifications
+    make VARCHAR(100),
+    model VARCHAR(100),
+    badge VARCHAR(100),
+    series VARCHAR(100),
+    year INT,
+    built VARCHAR(10),
+    complianceDate VARCHAR(20),
+    body VARCHAR(50),
+    doors INT,
+    seats INT,
+    colour VARCHAR(100),
+    colourManufacturer VARCHAR(150),
+    trimType VARCHAR(100),
+    trimColour VARCHAR(100),
+
+    -- Engine & Performance
+    transmission VARCHAR(100),
+    driveType VARCHAR(100),
+    fuelType VARCHAR(100),
+    fuelSystem VARCHAR(100),
+    engineCapacity DECIMAL(3,1),
+    engineCapacityInLitres DECIMAL(3,1),
+    engineCapacityUnit VARCHAR(20),
+    cylinders INT,
+    induction VARCHAR(50),
+    gears INT,
+    power INT,
+    horsePower VARCHAR(20),
+    maxPowerRPM INT,
+
+    -- Usage & Condition
+    kilometres INT,
+    odometer INT,
+    odometerUnit VARCHAR(100),
+    hours INT,
+    fuelEconomy DECIMAL(4,1),
+    greenStarRating DECIMAL(2,1),
+    ancapSafetyRating INT,
+    vFactsClass VARCHAR(50),
+
+    -- Registration & Legal
+    registrationNumber VARCHAR(20),
+    registrationJurisdiction VARCHAR(10),
+    registrationExpiry DATETIME,
+    vin VARCHAR(50),
+    redbookCode VARCHAR(50),
+    redbookDescription VARCHAR(255),
+
+    -- Salvage & Condition Flags
+    salvage VARCHAR(50),
+    salvageStatus BOOLEAN,
+    driveable BOOLEAN,
+    engineStarts BOOLEAN,
+    car_keys BOOLEAN,
+    spareKeys BOOLEAN,
+    plates BOOLEAN,
+    platesNumber INT,
+    sellingPlates VARCHAR(50),
+    pPlateApproved VARCHAR(10),
+    ownersManual VARCHAR(10),
+    serviceHistory VARCHAR(100),
+
+    -- Physical Specifications
+    towingBraked INT,
+    gcm INT,
+    gvm INT,
+    tare INT,
+    length DECIMAL(6,2),
+    width DECIMAL(6,2),
+    height DECIMAL(6,2),
+
+    -- Business Information
+    productLine VARCHAR(100),
+    productTypeFilter VARCHAR(50),
+    itemLoB VARCHAR(100),
+    vendorName VARCHAR(255),
+    businessUnitSelling VARCHAR(50),
+    buyMethod VARCHAR(100),
+    sellingMethodName VARCHAR(100),
+
+    -- Sale Status & Pricing
+    forSale BOOLEAN,
+    publiclySearchable BOOLEAN,
+    price DECIMAL(12,2),
+    minimumBid DECIMAL(12,2),
+    buyNowPrice DECIMAL(12,2),
+    highestBid DECIMAL(12,2),
+    productBidEnd DATETIME,
+
+    -- Lot Information
+    lotNumber VARCHAR(20),
+    lotNumberPrefix INT,
+    lotNumberSuffix VARCHAR(10),
+    saleLottingComplete BOOLEAN,
+    productInSaleId BIGINT,
+    productInSaleExternalId BIGINT,
+
+    -- Sale Information
+    saleId INT,
+    saleNumber INT,
+    saleName VARCHAR(255),
+    saleStatus VARCHAR(50),
+    saleStart DATETIME,
+    saleEnd DATETIME,
+    saleEventLocation VARCHAR(255),
+    businessUnitId VARCHAR(50),
+    businessUnitName VARCHAR(255),
+    sellingChannelId VARCHAR(50),
+    saleStartTimezone VARCHAR(50),
+    saleEndTimezone VARCHAR(50),
+
+    -- Location Information
+    productLocationCity VARCHAR(100),
+    productLocationSuburb VARCHAR(100),
+    productLocationState VARCHAR(10),
+    productLocationTimeZone VARCHAR(20),
+
+    -- Product Type
+    productTypeCode VARCHAR(10),
+    productTypeTitle VARCHAR(100),
+
+    -- Metadata
+    etag VARCHAR(100),
+    expiryDate DATETIME,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
