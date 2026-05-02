@@ -56,8 +56,29 @@ class VehicleTrackingProcessor:
     
     def load_vehicle_tracking_schema(self):
         """Load vehicle tracking schema from JSON file"""
+        schema_file = str(PROJECT_ROOT / 'data_format' / 'vehicle_tracking.json')
+        # #region agent log
         try:
-            schema_file = os.path.join(self.script_dir, 'data_format', 'vehicle_tracking.json')
+            _alt = os.path.join(self.script_dir, 'data_format', 'vehicle_tracking.json')
+            _payload = {
+                'sessionId': 'c155d4',
+                'hypothesisId': 'H1',
+                'location': 'listing_step6_vehicles_to_db.py:load_vehicle_tracking_schema',
+                'message': 'schema path resolution',
+                'timestamp': int(datetime.now().timestamp() * 1000),
+                'data': {
+                    'schema_file': schema_file,
+                    'legacy_script_subpath': _alt,
+                    'exists_project_root_path': os.path.isfile(schema_file),
+                    'exists_legacy_path': os.path.isfile(_alt),
+                },
+            }
+            with open(PROJECT_ROOT / 'debug-c155d4.log', 'a', encoding='utf-8') as _df:
+                _df.write(json.dumps(_payload) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        try:
             with open(schema_file, 'r', encoding='utf-8') as f:
                 self.schema = json.load(f)
             
